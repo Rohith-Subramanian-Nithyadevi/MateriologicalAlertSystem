@@ -1,5 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
-
+import System.Environment (lookupEnv)
+import Text.Read (readMaybe)
 import Web.Scotty
 import Data.Aeson (object, (.=))
 import Types
