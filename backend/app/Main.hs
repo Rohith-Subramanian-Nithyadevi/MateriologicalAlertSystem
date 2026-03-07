@@ -8,7 +8,14 @@ import Classifier
 import Network.Wai.Middleware.Cors (simpleCors)
 
 main :: IO ()
-main = scotty 3000 $ do
+import System.Environment (lookupEnv)
+import Text.Read (readMaybe)
+
+main :: IO ()
+main = do
+  portEnv <- lookupEnv "PORT"
+  let port = maybe 3000 read portEnv
+  scotty port $ do
 
   middleware simpleCors
 
