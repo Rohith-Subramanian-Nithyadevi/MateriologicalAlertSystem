@@ -2,52 +2,77 @@ module Classifier where
 
 import Types
 
--- | Classify weather conditions into a severity level.
---
--- Uses a point-based system that considers all five parameters:
---   * Rainfall & wind speed (primary indicators)
---   * Temperature extremes, low pressure, high humidity (secondary)
---
--- Points:  0–1 = Low,  2–3 = Moderate,  4–5 = High,  6+ = Extreme
-classify :: Weather -> Severity
-classify w = pointsToSeverity totalPoints
-  where
-    totalPoints = rainPoints + windPoints + tempPoints + pressPoints + humPoints
+-- | 1. Categorization
+-- Convert continuous Double values into discrete Algebraic Data Types (ADTs)
+categorizeRainfall :: Double -> RainfallCategory
+categorizeRainfall r
+  | r == 0          = NoRain
+  | r <= 15.5       = LightRain
+  | r <= 64.4       = ModerateRain
+  | r <= 115.5      = HeavyRain
+  | r <= 204.4      = VeryHeavyRain
+  | otherwise       = ExtremelyHeavy
 
-    -- Primary: Rainfall (mm)
-    rainPoints
-      | rainfall w > 200 = 3
-      | rainfall w > 100 = 2
-      | rainfall w > 50  = 1
-      | otherwise        = 0
+categorizeWind :: Double -> WindCategory
+categorizeWind w
+  | w <= 20  = Calm
+  | w <= 40  = StrongWind
+  | w <= 61  = SquallyWind
+  | w <= 88  = Gale
+  | w <= 117 = Storm
+  | otherwise = Hurricane
 
-    -- Primary: Wind speed (km/h)
-    windPoints
-      | windSpeed w > 120 = 3
-      | windSpeed w > 80  = 2
-      | windSpeed w > 50  = 1
-      | otherwise         = 0
+categorizeTemp :: Double -> TemperatureCategory
+categorizeTemp t
+  | t >= 47 = SevereHeatWave
+  | t >= 40 = HeatWave
+  | t <= 0  = SevereColdWave
+  | t <= 4  = ColdWave
+  | otherwise = NormalTemp
 
-    -- Secondary: Temperature extremes (°C)
-    tempPoints
-      | temperature w > 45 || temperature w < (-10) = 2
-      | temperature w > 40 || temperature w < 0     = 1
-      | otherwise                                   = 0
+-- | Convert a raw Weather record into a categorized WeatherCondition ADT
+toCondition :: Weather -> WeatherCondition
+toCondition w = WeatherCondition
+  (categorizeRainfall $ rainfall w)
+  (categorizeWind $ windSpeed w)
+  (categorizeTemp $ temperature w)
 
-    -- Secondary: Surface pressure (hPa) — low pressure = storms
-    pressPoints
-      | pressure w < 970  = 2
-      | pressure w < 990  = 1
-      | otherwise         = 0
+-- | 2. Core Logic using Pattern Matching
+-- Pattern matches against the WeatherCondition ADT to assign an IMD Color
+classifyCondition :: WeatherCondition -> IMDColor
+-- Extreme Conditions (Red Alert: Take Action)
+classifyCondition (WeatherCondition ExtremelyHeavy _ _) = Red
+classifyCondition (WeatherCondition _ Hurricane _) = Red
+classifyCondition (WeatherCondition _ _ SevereHeatWave) = Red
+classifyCondition (WeatherCondition _ _ SevereColdWave) = Red
+classifyCondition (WeatherCondition VeryHeavyRain Storm _) = Red
 
-    -- Secondary: Humidity (%) — high humidity amplifies heat
-    humPoints
-      | humidity w > 90 && temperature w > 35 = 1
-      | otherwise                             = 0
+-- High Conditions (Orange Alert: Be Prepared)
+classifyCondition (WeatherCondition VeryHeavyRain _ _) = Orange
+classifyCondition (WeatherCondition _ Storm _) = Orange
+classifyCondition (WeatherCondition _ Gale _) = Orange
+classifyCondition (WeatherCondition _ _ HeatWave) = Orange
+classifyCondition (WeatherCondition _ _ ColdWave) = Orange
+classifyCondition (WeatherCondition HeavyRain SquallyWind _) = Orange
 
-pointsToSeverity :: Int -> Severity
-pointsToSeverity pts
-  | pts >= 6  = Extreme
-  | pts >= 4  = High
-  | pts >= 2  = Moderate
-  | otherwise = Low
+-- Moderate Conditions (Yellow Alert: Be Updated)
+classifyCondition (WeatherCondition HeavyRain _ _) = Yellow
+classifyCondition (WeatherCondition ModerateRain _ _) = Yellow
+classifyCondition (WeatherCondition _ SquallyWind _) = Yellow
+classifyCondition (WeatherCondition _ StrongWind _) = Yellow
+
+-- Safe Conditions (Green Alert: No Warning)
+classifyCondition _ = Green
+
+-- | Main exported classification function
+-- Maps the strict IMD Color logic back to the simple string formats expected by the React frontend
+classify :: Weather -> String
+classify w =
+  let condition = toCondition w
+      imdColor = classifyCondition condition
+  in 
+    case imdColor of
+      Green  -> "Low"
+      Yellow -> "Moderate"
+      Orange -> "High"
+      Red    -> "Extreme"

@@ -36,5 +36,5 @@ main = do
       let sev = classify weather
 
       json $ object
-        [ "severity" .= show sev
+        [ "severity" .= sev
         ]
