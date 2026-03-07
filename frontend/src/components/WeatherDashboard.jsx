@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 
 const BACKEND_URL = "https://meteorological-backend.onrender.com"
 
@@ -101,6 +101,106 @@ export default function WeatherDashboard() {
   const [cityName, setCityName] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [watchlist, setWatchlist] = useState(['London', 'Tokyo', 'New York', 'Sydney'])
+  const [monitorData, setMonitorData] = useState({})
+  const [monitorLoading, setMonitorLoading] = useState(false)
+
+  // Fetch all watchlist cities on mount
+  useEffect(() => {
+    fetchMonitorData()
+  }, [])
+
+  async function fetchMonitorData() {
+    setMonitorLoading(true)
+    const results = { ...monitorData }
+    
+    for (const city of watchlist) {
+      try {
+        const geoRes = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(city)}&count=1`)
+        const geoData = await geoRes.json()
+        if (geoData.results?.[0]) {
+          const { latitude: lat, longitude: lon, country } = geoData.results[0]
+          const weatherRes = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,wind_speed_10m,relative_humidity_2m,surface_pressure,rain`)
+          const weatherData = await weatherRes.json()
+          const current = weatherData.current
+          
+          if (current) {
+            const temp = current.temperature_2m ?? 0
+            const wind = current.wind_speed_10m ?? 0
+            const rain = current.rain ?? 0
+            const humidity = current.relative_humidity_2m ?? 50
+            const pressure = current.surface_pressure ?? 1013
+
+            const classifyRes = await fetch(`${BACKEND_URL}/classify?temp=${temp}&rain=${rain}&wind=${wind}&humidity=${humidity}&pressure=${pressure}`)
+            const classifyData = await classifyRes.json()
+            
+            results[city] = {
+              temp, wind, rain, humidity, pressure,
+              severity: classifyData.severity || 'Low',
+              country: country || '',
+              resolvedName: geoData.results[0].name
+            }
+          }
+        }
+      } catch (e) {
+        console.error(`Failed to fetch monitor data for ${city}:`, e)
+      }
+    }
+    setMonitorData(results)
+    setMonitorLoading(false)
+  }
+
+  const addToWatchlist = () => {
+    if (cityName && !watchlist.includes(cityName)) {
+      const newWatchlist = [...watchlist, cityName]
+      setWatchlist(newWatchlist)
+      // Immediately fetch for the new city
+      fetchMonitorForCity(cityName)
+    }
+  }
+
+  const removeFromWatchlist = (e, name) => {
+    e.stopPropagation()
+    const newWatchlist = watchlist.filter(c => c !== name)
+    setWatchlist(newWatchlist)
+    const newMonitorData = { ...monitorData }
+    delete newMonitorData[name]
+    setMonitorData(newMonitorData)
+  }
+
+  async function fetchMonitorForCity(name) {
+    try {
+      const geoRes = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(name)}&count=1`)
+      const geoData = await geoRes.json()
+      if (geoData.results?.[0]) {
+        const { latitude: lat, longitude: lon, country } = geoData.results[0]
+        const weatherRes = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,wind_speed_10m,relative_humidity_2m,surface_pressure,rain`)
+        const weatherData = await weatherRes.json()
+        const current = weatherData.current
+        if (current) {
+          const temp = current.temperature_2m ?? 0
+          const wind = current.wind_speed_10m ?? 0
+          const rain = current.rain ?? 0
+          const humidity = current.relative_humidity_2m ?? 50
+          const pressure = current.surface_pressure ?? 1013
+          const classifyRes = await fetch(`${BACKEND_URL}/classify?temp=${temp}&rain=${rain}&wind=${wind}&humidity=${humidity}&pressure=${pressure}`)
+          const classifyData = await classifyRes.json()
+          
+          setMonitorData(prev => ({
+            ...prev,
+            [name]: {
+              temp, wind, rain, humidity, pressure,
+              severity: classifyData.severity || 'Low',
+              country: country || '',
+              resolvedName: geoData.results[0].name
+            }
+          }))
+        }
+      }
+    } catch (e) {
+      console.error(`Failed to fetch monitor data for ${name}:`, e)
+    }
+  }
 
   async function fetchWeather() {
     const trimmed = city.trim()
@@ -251,7 +351,16 @@ export default function WeatherDashboard() {
 
             {severity && (
               <div className="severity-section">
-                <div className="severity-label">Alert Severity</div>
+                <div className="severity-header-row">
+                  <div className="severity-label">Alert Severity</div>
+                  <button 
+                    className="add-to-watchlist-btn"
+                    onClick={addToWatchlist}
+                    disabled={watchlist.includes(cityName)}
+                  >
+                    {watchlist.includes(cityName) ? '📍 Monitored' : '+ Monitor City'}
+                  </button>
+                </div>
                 <span className={`severity-badge ${sevConfig.className}`}>
                   <span className="severity-emoji">{sevConfig.emoji}</span>
                   {severity}
@@ -261,6 +370,58 @@ export default function WeatherDashboard() {
           </div>
         )}
 
+      </div>
+
+      {/* ====== BOTTOM: Regional Alert Monitor ====== */}
+      <div className="monitor-container">
+        <div className="monitor-header">
+          <div className="monitor-title-group">
+            <h2 className="monitor-title">Regional Alert Monitor</h2>
+            <p className="monitor-subtitle">Live tracking of saved locations</p>
+          </div>
+          {monitorLoading && <div className="spinner-sm"></div>}
+        </div>
+
+        <div className="monitor-grid">
+          {watchlist.map(name => {
+            const data = monitorData[name]
+            if (!data) return (
+              <div key={name} className="monitor-card skeleton">
+                <div className="skeleton-line short"></div>
+                <div className="skeleton-line"></div>
+              </div>
+            )
+
+            const config = SEVERITY_CONFIG[data.severity] || { emoji: '❓', className: '' }
+            
+            return (
+              <div 
+                key={name} 
+                className={`monitor-card ${config.className}`}
+                onClick={() => {
+                  setCity(name)
+                  fetchWeather()
+                }}
+              >
+                <button className="remove-btn" onClick={(e) => removeFromWatchlist(e, name)}>×</button>
+                <div className="monitor-card-header">
+                  <span className="monitor-city">{data.resolvedName}</span>
+                  <span className="monitor-country">{data.country}</span>
+                </div>
+                <div className="monitor-card-body">
+                  <div className="monitor-temp">{data.temp}°C</div>
+                  <div className={`monitor-badge ${config.className}`}>
+                    {config.emoji} {data.severity}
+                  </div>
+                </div>
+                <div className="monitor-card-footer">
+                  <span>🌬️ {data.wind}km/h</span>
+                  <span>🌧️ {data.rain}mm</span>
+                </div>
+              </div>
+            )
+          })}
+        </div>
       </div>
 
       {/* ====== RIGHT: Alert Details Panel ====== */}
