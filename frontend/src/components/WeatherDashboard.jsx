@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 
 const BACKEND_URL = "https://meteorological-backend.onrender.com"
 
@@ -54,6 +54,40 @@ const SEVERITY_DETAILS = {
   },
 }
 
+// ~30 major global cities with pre-set coordinates (avoids geocoding calls)
+const GLOBAL_SCAN_CITIES = [
+  { name: 'Mumbai', country: 'India', lat: 19.08, lon: 72.88 },
+  { name: 'Delhi', country: 'India', lat: 28.61, lon: 77.21 },
+  { name: 'Chennai', country: 'India', lat: 13.08, lon: 80.27 },
+  { name: 'Kolkata', country: 'India', lat: 22.57, lon: 88.36 },
+  { name: 'Dhaka', country: 'Bangladesh', lat: 23.81, lon: 90.41 },
+  { name: 'Tokyo', country: 'Japan', lat: 35.68, lon: 139.69 },
+  { name: 'Manila', country: 'Philippines', lat: 14.60, lon: 120.98 },
+  { name: 'Ho Chi Minh City', country: 'Vietnam', lat: 10.82, lon: 106.63 },
+  { name: 'Bangkok', country: 'Thailand', lat: 13.75, lon: 100.52 },
+  { name: 'Jakarta', country: 'Indonesia', lat: -6.21, lon: 106.85 },
+  { name: 'Shanghai', country: 'China', lat: 31.23, lon: 121.47 },
+  { name: 'Beijing', country: 'China', lat: 39.90, lon: 116.40 },
+  { name: 'Hong Kong', country: 'China', lat: 22.32, lon: 114.17 },
+  { name: 'Taipei', country: 'Taiwan', lat: 25.03, lon: 121.57 },
+  { name: 'Seoul', country: 'South Korea', lat: 37.57, lon: 126.98 },
+  { name: 'London', country: 'UK', lat: 51.51, lon: -0.13 },
+  { name: 'Miami', country: 'USA', lat: 25.76, lon: -80.19 },
+  { name: 'Houston', country: 'USA', lat: 29.76, lon: -95.37 },
+  { name: 'New York', country: 'USA', lat: 40.71, lon: -74.01 },
+  { name: 'Mexico City', country: 'Mexico', lat: 19.43, lon: -99.13 },
+  { name: 'São Paulo', country: 'Brazil', lat: -23.55, lon: -46.63 },
+  { name: 'Lagos', country: 'Nigeria', lat: 6.52, lon: 3.38 },
+  { name: 'Nairobi', country: 'Kenya', lat: -1.29, lon: 36.82 },
+  { name: 'Cairo', country: 'Egypt', lat: 30.04, lon: 31.24 },
+  { name: 'Sydney', country: 'Australia', lat: -33.87, lon: 151.21 },
+  { name: 'Dubai', country: 'UAE', lat: 25.20, lon: 55.27 },
+  { name: 'Karachi', country: 'Pakistan', lat: 24.86, lon: 67.01 },
+  { name: 'Colombo', country: 'Sri Lanka', lat: 6.93, lon: 79.84 },
+  { name: 'Yangon', country: 'Myanmar', lat: 16.87, lon: 96.20 },
+  { name: 'Havana', country: 'Cuba', lat: 23.11, lon: -82.37 },
+]
+
 function getAlertReasons(weather) {
   const reasons = []
 
@@ -101,71 +135,104 @@ export default function WeatherDashboard() {
   const [cityName, setCityName] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
-  const [watchlist, setWatchlist] = useState(['London', 'Tokyo', 'New York', 'Sydney'])
+
+  // User watchlist — starts empty
+  const [watchlist, setWatchlist] = useState([])
   const [monitorData, setMonitorData] = useState({})
-  const [monitorLoading, setMonitorLoading] = useState(false)
 
-  // Fetch all watchlist cities on mount
-  useEffect(() => {
-    fetchMonitorData()
-  }, [])
+  // Global alert scanner
+  const [globalAlerts, setGlobalAlerts] = useState([])
+  const [scanLoading, setScanLoading] = useState(false)
+  const [lastScanTime, setLastScanTime] = useState(null)
 
-  async function fetchMonitorData() {
-    setMonitorLoading(true)
-    const results = { ...monitorData }
-    
-    for (const city of watchlist) {
+  // ─── Global Alert Scanner ───
+  const runGlobalScan = useCallback(async () => {
+    setScanLoading(true)
+    const alerts = []
+
+    for (const loc of GLOBAL_SCAN_CITIES) {
       try {
-        const geoRes = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(city)}&count=1`)
-        const geoData = await geoRes.json()
-        if (geoData.results?.[0]) {
-          const { latitude: lat, longitude: lon, country } = geoData.results[0]
-          const weatherRes = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,wind_speed_10m,relative_humidity_2m,surface_pressure,rain`)
-          const weatherData = await weatherRes.json()
-          const current = weatherData.current
-          
-          if (current) {
-            const temp = current.temperature_2m ?? 0
-            const wind = current.wind_speed_10m ?? 0
-            const rain = current.rain ?? 0
-            const humidity = current.relative_humidity_2m ?? 50
-            const pressure = current.surface_pressure ?? 1013
+        const weatherRes = await fetch(
+          `https://api.open-meteo.com/v1/forecast?latitude=${loc.lat}&longitude=${loc.lon}&current=temperature_2m,wind_speed_10m,relative_humidity_2m,surface_pressure,rain`
+        )
+        const weatherData = await weatherRes.json()
+        const current = weatherData.current
+        if (!current) continue
 
-            const classifyRes = await fetch(`${BACKEND_URL}/classify?temp=${temp}&rain=${rain}&wind=${wind}&humidity=${humidity}&pressure=${pressure}`)
-            const classifyData = await classifyRes.json()
-            
-            results[city] = {
-              temp, wind, rain, humidity, pressure,
-              severity: classifyData.severity || 'Low',
-              country: country || '',
-              resolvedName: geoData.results[0].name
-            }
-          }
+        const temp = current.temperature_2m ?? 0
+        const wind = current.wind_speed_10m ?? 0
+        const rain = current.rain ?? 0
+        const humidity = current.relative_humidity_2m ?? 50
+        const pressure = current.surface_pressure ?? 1013
+
+        const classifyRes = await fetch(
+          `${BACKEND_URL}/classify?temp=${temp}&rain=${rain}&wind=${wind}&humidity=${humidity}&pressure=${pressure}`
+        )
+        const classifyData = await classifyRes.json()
+        const sev = classifyData.severity || 'Low'
+
+        // Only keep Moderate, High, or Extreme
+        if (sev !== 'Low') {
+          alerts.push({
+            name: loc.name,
+            country: loc.country,
+            temp, wind, rain, humidity, pressure,
+            severity: sev,
+          })
         }
       } catch (e) {
-        console.error(`Failed to fetch monitor data for ${city}:`, e)
+        console.error(`Global scan failed for ${loc.name}:`, e)
       }
     }
-    setMonitorData(results)
-    setMonitorLoading(false)
-  }
 
+    // Sort: Extreme first, then High, then Moderate
+    const order = { Extreme: 0, High: 1, Moderate: 2 }
+    alerts.sort((a, b) => (order[a.severity] ?? 3) - (order[b.severity] ?? 3))
+
+    setGlobalAlerts(alerts)
+    setLastScanTime(new Date())
+    setScanLoading(false)
+  }, [])
+
+  // Run on mount + every 10 minutes
+  useEffect(() => {
+    runGlobalScan()
+    const interval = setInterval(runGlobalScan, 10 * 60 * 1000)
+    return () => clearInterval(interval)
+  }, [runGlobalScan])
+
+  // ─── User Watchlist ───
   const addToWatchlist = () => {
     if (cityName && !watchlist.includes(cityName)) {
-      const newWatchlist = [...watchlist, cityName]
-      setWatchlist(newWatchlist)
-      // Immediately fetch for the new city
-      fetchMonitorForCity(cityName)
+      setWatchlist(prev => [...prev, cityName])
+      if (weather && severity) {
+        setMonitorData(prev => ({
+          ...prev,
+          [cityName]: {
+            temp: weather.temp,
+            wind: weather.wind,
+            rain: weather.rain,
+            humidity: weather.humidity,
+            pressure: weather.pressure,
+            severity,
+            country: cityName.split(', ')[1] || '',
+            resolvedName: cityName.split(', ')[0],
+          }
+        }))
+      } else {
+        fetchMonitorForCity(cityName)
+      }
     }
   }
 
   const removeFromWatchlist = (e, name) => {
     e.stopPropagation()
-    const newWatchlist = watchlist.filter(c => c !== name)
-    setWatchlist(newWatchlist)
-    const newMonitorData = { ...monitorData }
-    delete newMonitorData[name]
-    setMonitorData(newMonitorData)
+    setWatchlist(prev => prev.filter(c => c !== name))
+    setMonitorData(prev => {
+      const copy = { ...prev }
+      delete copy[name]
+      return copy
+    })
   }
 
   async function fetchMonitorForCity(name) {
@@ -185,7 +252,7 @@ export default function WeatherDashboard() {
           const pressure = current.surface_pressure ?? 1013
           const classifyRes = await fetch(`${BACKEND_URL}/classify?temp=${temp}&rain=${rain}&wind=${wind}&humidity=${humidity}&pressure=${pressure}`)
           const classifyData = await classifyRes.json()
-          
+
           setMonitorData(prev => ({
             ...prev,
             [name]: {
@@ -202,6 +269,7 @@ export default function WeatherDashboard() {
     }
   }
 
+  // ─── Search ───
   async function fetchWeather() {
     const trimmed = city.trim()
     if (!trimmed) {
@@ -353,7 +421,7 @@ export default function WeatherDashboard() {
               <div className="severity-section">
                 <div className="severity-header-row">
                   <div className="severity-label">Alert Severity</div>
-                  <button 
+                  <button
                     className="add-to-watchlist-btn"
                     onClick={addToWatchlist}
                     disabled={watchlist.includes(cityName)}
@@ -372,56 +440,129 @@ export default function WeatherDashboard() {
 
       </div>
 
-      {/* ====== BOTTOM: Regional Alert Monitor ====== */}
+      {/* ====== GLOBAL ALERTS (auto-scanned) ====== */}
+      <div className="global-alerts-container">
+        <div className="global-alerts-header">
+          <div className="global-alerts-title-group">
+            <h2 className="global-alerts-title">
+              <span className="global-pulse-dot"></span>
+              🌍 Global Alerts
+            </h2>
+            <p className="global-alerts-subtitle">
+              Auto-scanning {GLOBAL_SCAN_CITIES.length} major cities
+              {lastScanTime && <> · Updated {lastScanTime.toLocaleTimeString()}</>}
+            </p>
+          </div>
+          {scanLoading && <div className="spinner-sm"></div>}
+        </div>
+
+        {scanLoading && globalAlerts.length === 0 && (
+          <div className="scan-loading">
+            <div className="spinner"></div>
+            <span className="loading-text">Scanning global weather conditions...</span>
+          </div>
+        )}
+
+        {!scanLoading && globalAlerts.length === 0 && (
+          <div className="global-empty-state">
+            <span className="empty-icon">✅</span>
+            <p>No active alerts detected worldwide. All {GLOBAL_SCAN_CITIES.length} monitored cities are within safe parameters.</p>
+          </div>
+        )}
+
+        {globalAlerts.length > 0 && (
+          <div className="monitor-grid">
+            {globalAlerts.map(alert => {
+              const config = SEVERITY_CONFIG[alert.severity] || { emoji: '❓', className: '' }
+              return (
+                <div
+                  key={alert.name}
+                  className={`monitor-card ${config.className}`}
+                  onClick={() => {
+                    setCity(alert.name)
+                    fetchWeather()
+                  }}
+                >
+                  <div className="monitor-card-header">
+                    <span className="monitor-city">{alert.name}</span>
+                    <span className="monitor-country">{alert.country}</span>
+                  </div>
+                  <div className="monitor-card-body">
+                    <div className="monitor-temp">{alert.temp}°C</div>
+                    <div className={`monitor-badge ${config.className}`}>
+                      {config.emoji} {alert.severity}
+                    </div>
+                  </div>
+                  <div className="monitor-card-footer">
+                    <span>🌬️ {alert.wind}km/h</span>
+                    <span>🌧️ {alert.rain}mm</span>
+                    <span>📉 {alert.pressure}hPa</span>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* ====== MY WATCHLIST (user-added) ====== */}
       <div className="monitor-container">
         <div className="monitor-header">
           <div className="monitor-title-group">
-            <h2 className="monitor-title">Regional Alert Monitor</h2>
-            <p className="monitor-subtitle">Live tracking of saved locations</p>
+            <h2 className="monitor-title">📍 My Watchlist</h2>
+            <p className="monitor-subtitle">Your saved locations</p>
           </div>
-          {monitorLoading && <div className="spinner-sm"></div>}
         </div>
 
-        <div className="monitor-grid">
-          {watchlist.map(name => {
-            const data = monitorData[name]
-            if (!data) return (
-              <div key={name} className="monitor-card skeleton">
-                <div className="skeleton-line short"></div>
-                <div className="skeleton-line"></div>
-              </div>
-            )
+        {watchlist.length === 0 && (
+          <div className="watchlist-empty-state">
+            <span className="empty-icon">📍</span>
+            <p>No cities added yet. Search for a city above and click <strong>"+ Monitor City"</strong> to add it here.</p>
+          </div>
+        )}
 
-            const config = SEVERITY_CONFIG[data.severity] || { emoji: '❓', className: '' }
-            
-            return (
-              <div 
-                key={name} 
-                className={`monitor-card ${config.className}`}
-                onClick={() => {
-                  setCity(name)
-                  fetchWeather()
-                }}
-              >
-                <button className="remove-btn" onClick={(e) => removeFromWatchlist(e, name)}>×</button>
-                <div className="monitor-card-header">
-                  <span className="monitor-city">{data.resolvedName}</span>
-                  <span className="monitor-country">{data.country}</span>
+        {watchlist.length > 0 && (
+          <div className="monitor-grid">
+            {watchlist.map(name => {
+              const data = monitorData[name]
+              if (!data) return (
+                <div key={name} className="monitor-card skeleton">
+                  <div className="skeleton-line short"></div>
+                  <div className="skeleton-line"></div>
                 </div>
-                <div className="monitor-card-body">
-                  <div className="monitor-temp">{data.temp}°C</div>
-                  <div className={`monitor-badge ${config.className}`}>
-                    {config.emoji} {data.severity}
+              )
+
+              const config = SEVERITY_CONFIG[data.severity] || { emoji: '❓', className: '' }
+
+              return (
+                <div
+                  key={name}
+                  className={`monitor-card ${config.className}`}
+                  onClick={() => {
+                    setCity(data.resolvedName || name)
+                    fetchWeather()
+                  }}
+                >
+                  <button className="remove-btn" onClick={(e) => removeFromWatchlist(e, name)}>×</button>
+                  <div className="monitor-card-header">
+                    <span className="monitor-city">{data.resolvedName}</span>
+                    <span className="monitor-country">{data.country}</span>
+                  </div>
+                  <div className="monitor-card-body">
+                    <div className="monitor-temp">{data.temp}°C</div>
+                    <div className={`monitor-badge ${config.className}`}>
+                      {config.emoji} {data.severity}
+                    </div>
+                  </div>
+                  <div className="monitor-card-footer">
+                    <span>🌬️ {data.wind}km/h</span>
+                    <span>🌧️ {data.rain}mm</span>
                   </div>
                 </div>
-                <div className="monitor-card-footer">
-                  <span>🌬️ {data.wind}km/h</span>
-                  <span>🌧️ {data.rain}mm</span>
-                </div>
-              </div>
-            )
-          })}
-        </div>
+              )
+            })}
+          </div>
+        )}
       </div>
 
       {/* ====== RIGHT: Alert Details Panel ====== */}
