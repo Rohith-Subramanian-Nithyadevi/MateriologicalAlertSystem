@@ -64,15 +64,51 @@ classifyCondition (WeatherCondition _ StrongWind _) = Yellow
 -- Safe Conditions (Green Alert: No Warning)
 classifyCondition _ = Green
 
--- | Main exported classification function
--- Maps the strict IMD Color logic back to the simple string formats expected by the React frontend
-classify :: Weather -> String
+-- | Helper to map IMD Color to string
+imdColorToString :: IMDColor -> String
+imdColorToString Green  = "Low"
+imdColorToString Yellow = "Moderate"
+imdColorToString Orange = "High"
+imdColorToString Red    = "Extreme"
+
+-- | Helper to increase severity
+bumpColor :: IMDColor -> IMDColor
+bumpColor Green  = Yellow
+bumpColor Yellow = Orange
+bumpColor Orange = Red
+bumpColor Red    = Red
+
+-- | Main exported classification function without historical context
+classify :: Weather -> (String, String)
 classify w =
   let condition = toCondition w
       imdColor = classifyCondition condition
-  in 
-    case imdColor of
-      Green  -> "Low"
-      Yellow -> "Moderate"
-      Orange -> "High"
-      Red    -> "Extreme"
+  in (imdColorToString imdColor, "Classification based on absolute thresholds.")
+
+-- | Classification taking historical baseline into account
+classifyWithHistory :: Weather -> WeatherAverage -> (String, String)
+classifyWithHistory w avg =
+  let condition = toCondition w
+      baseColor = classifyCondition condition
+      
+      -- Calculate deviations
+      rainDiff = rainfall w - avgRainfall avg
+      windDiff = windSpeed w - avgWindSpeed avg
+      tempDiff = temperature w - avgTemperature avg
+      humDiff  = humidity w - avgHumidity avg
+      pressDiff = avgPressure avg - pressure w -- lower pressure is worse
+      
+      (finalColor, reason)
+        -- Significant deviation leading to increased severity
+        | rainDiff > 50 = (bumpColor baseColor, "Rainfall is significantly higher than historical average.")
+        | windDiff > 30 = (bumpColor baseColor, "Wind speed is significantly higher than historical average.")
+        | tempDiff > 10 = (bumpColor baseColor, "Temperature is significantly higher than historical average.")
+        | tempDiff < -10 = (bumpColor baseColor, "Temperature is significantly lower than historical average.")
+        | pressDiff > 20 = (bumpColor baseColor, "Pressure has dropped significantly compared to historical average.")
+        -- Similar to historical average, reducing perceived threat (unless it's an absolute Red extreme)
+        | abs rainDiff < 10 && abs windDiff < 10 && abs tempDiff < 5 && abs humDiff < 10 && pressDiff < 10 && baseColor /= Red = 
+            (Green, "Current weather is very similar to the historical average for this region.")
+        -- Fallback to absolute thresholds
+        | otherwise = (baseColor, "Weather conditions assessed against standard thresholds and historical context.")
+        
+  in (imdColorToString finalColor, reason)

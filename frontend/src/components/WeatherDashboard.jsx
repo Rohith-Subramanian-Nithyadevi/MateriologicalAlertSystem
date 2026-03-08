@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 
-const BACKEND_URL = "https://meteorological-backend.onrender.com"
+const BACKEND_URL = "http://localhost:3000"
 
 const SEVERITY_CONFIG = {
   Low:      { emoji: '✅', className: 'low' },
@@ -132,6 +132,7 @@ export default function WeatherDashboard() {
   const [city, setCity] = useState('')
   const [weather, setWeather] = useState(null)
   const [severity, setSeverity] = useState('')
+  const [reason, setReason] = useState('')
   const [cityName, setCityName] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -281,6 +282,7 @@ export default function WeatherDashboard() {
     setError('')
     setWeather(null)
     setSeverity('')
+    setReason('')
 
     try {
       const geoRes = await fetch(
@@ -298,7 +300,8 @@ export default function WeatherDashboard() {
 
       const weatherRes = await fetch(
         `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}` +
-        `&current=temperature_2m,wind_speed_10m,relative_humidity_2m,surface_pressure,rain`
+        `&current=temperature_2m,wind_speed_10m,relative_humidity_2m,surface_pressure,rain` +
+        `&past_days=30&hourly=temperature_2m,wind_speed_10m,relative_humidity_2m,surface_pressure,rain`
       )
       if (!weatherRes.ok) throw new Error('Failed to fetch weather data.')
       const weatherData = await weatherRes.json()
@@ -312,16 +315,34 @@ export default function WeatherDashboard() {
       const pressure = current.surface_pressure ?? 1013
       const rain = current.rain ?? 0
 
-      setWeather({ temp, wind, humidity, pressure, rain })
+      // Compute 30-day averages
+      let avgTemp = 0, avgWind = 0, avgHumidity = 50, avgPressure = 1013, avgRain = 0;
+      if (weatherData.hourly && weatherData.hourly.time) {
+        const hourly = weatherData.hourly;
+        const totalHours = hourly.time.length || 1;
+        const sum = arr => arr.reduce((a, b) => a + (b || 0), 0);
+        
+        avgTemp = parseFloat((sum(hourly.temperature_2m || []) / totalHours).toFixed(1));
+        avgWind = parseFloat((sum(hourly.wind_speed_10m || []) / totalHours).toFixed(1));
+        avgHumidity = Math.round(sum(hourly.relative_humidity_2m || []) / totalHours);
+        avgPressure = Math.round(sum(hourly.surface_pressure || []) / totalHours);
+        
+        const totalRain = sum(hourly.rain || []);
+        const totalDays = totalHours / 24; 
+        avgRain = parseFloat((totalRain / (totalDays || 1)).toFixed(1));
+      }
+
+      setWeather({ temp, wind, humidity, pressure, rain, avgTemp, avgWind, avgHumidity, avgPressure, avgRain })
 
       const classifyRes = await fetch(
-        `${BACKEND_URL}/classify?temp=${temp}&rain=${rain}&wind=${wind}&humidity=${humidity}&pressure=${pressure}`
+        `${BACKEND_URL}/classifyWithHistory?temp=${temp}&rain=${rain}&wind=${wind}&humidity=${humidity}&pressure=${pressure}&avg_temp=${avgTemp}&avg_rain=${avgRain}&avg_wind=${avgWind}&avg_humidity=${avgHumidity}&avg_pressure=${avgPressure}`
       )
       if (!classifyRes.ok) {
-        throw new Error('Classification service unavailable. Ensure the backend is running on port 3000.')
+        throw new Error('Classification service unavailable. Ensure the backend is running.')
       }
       const classifyData = await classifyRes.json()
       setSeverity(classifyData.severity || 'Unknown')
+      setReason(classifyData.reason || '')
 
     } catch (err) {
       setError(err.message || 'An unexpected error occurred.')
@@ -399,21 +420,41 @@ export default function WeatherDashboard() {
                 <span className="stat-icon">🌡️</span>
                 <div className="stat-value">{weather.temp}°C</div>
                 <div className="stat-label">Temperature</div>
+                {weather.avgTemp !== undefined && (
+                  <div className="stat-avg" style={{ fontSize: '0.85em', color: 'var(--text-secondary)', marginTop: '4px' }}>
+                    30d Avg: {weather.avgTemp}°C
+                  </div>
+                )}
               </div>
               <div className="stat-card">
                 <span className="stat-icon">💨</span>
                 <div className="stat-value">{weather.wind} km/h</div>
                 <div className="stat-label">Wind Speed</div>
+                {weather.avgWind !== undefined && (
+                  <div className="stat-avg" style={{ fontSize: '0.85em', color: 'var(--text-secondary)', marginTop: '4px' }}>
+                    30d Avg: {weather.avgWind} km/h
+                  </div>
+                )}
               </div>
               <div className="stat-card">
                 <span className="stat-icon">💧</span>
                 <div className="stat-value">{weather.humidity}%</div>
                 <div className="stat-label">Humidity</div>
+                {weather.avgHumidity !== undefined && (
+                  <div className="stat-avg" style={{ fontSize: '0.85em', color: 'var(--text-secondary)', marginTop: '4px' }}>
+                    30d Avg: {weather.avgHumidity}%
+                  </div>
+                )}
               </div>
               <div className="stat-card">
                 <span className="stat-icon">🌧️</span>
                 <div className="stat-value">{weather.rain} mm</div>
                 <div className="stat-label">Rainfall</div>
+                {weather.avgRain !== undefined && (
+                  <div className="stat-avg" style={{ fontSize: '0.85em', color: 'var(--text-secondary)', marginTop: '4px' }}>
+                    30d Avg: {weather.avgRain} mm
+                  </div>
+                )}
               </div>
             </div>
 
@@ -583,6 +624,18 @@ export default function WeatherDashboard() {
               <h3 className="section-title">Assessment</h3>
               <p className="section-text">{sevDetails.summary}</p>
             </section>
+
+            {reason && (
+              <>
+                <div className="section-divider"></div>
+                <section className="details-section">
+                  <h3 className="section-title">Historical Context Analysis</h3>
+                  <div className="stat-card" style={{ background: 'var(--bg-card-hover)', padding: '15px', color: 'var(--text-primary)', borderLeft: '4px solid var(--accent)', borderRadius: '4px', textAlign: 'left' }}>
+                    <p style={{ margin: 0, fontWeight: 500 }}>{reason}</p>
+                  </div>
+                </section>
+              </>
+            )}
 
             <div className="section-divider"></div>
 

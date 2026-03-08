@@ -9,6 +9,15 @@ data Weather = Weather
   , pressure :: Double
   } deriving (Show, Eq)
 
+-- | Historical average baseline for context
+data WeatherAverage = WeatherAverage
+  { avgTemperature :: Double
+  , avgRainfall :: Double
+  , avgWindSpeed :: Double
+  , avgHumidity :: Double
+  , avgPressure :: Double
+  } deriving (Show, Eq)
+
 -- | IMD Alert Colors (Severity) - This is an Algebraic Data Type (ADT)
 data IMDColor
   = Green  -- No Warning

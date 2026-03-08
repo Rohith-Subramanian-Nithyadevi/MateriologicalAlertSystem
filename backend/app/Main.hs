@@ -33,8 +33,46 @@ main = do
             , pressure = pres
             }
 
-      let sev = classify weather
+      let (sev, reason) = classify weather
 
       json $ object
         [ "severity" .= sev
+        , "reason" .= reason
+        ]
+
+    get "/classifyWithHistory" $ do
+
+      temp <- queryParam "temp"
+      rain <- queryParam "rain"
+      wind <- queryParam "wind"
+      hum  <- queryParam "humidity"
+      pres <- queryParam "pressure"
+      
+      avgTemp <- queryParam "avg_temp"
+      avgRain <- queryParam "avg_rain"
+      avgWind <- queryParam "avg_wind"
+      avgHum  <- queryParam "avg_humidity"
+      avgPres <- queryParam "avg_pressure"
+
+      let weather = Weather
+            { temperature = temp
+            , rainfall = rain
+            , windSpeed = wind
+            , humidity = hum
+            , pressure = pres
+            }
+
+      let avg = WeatherAverage
+            { avgTemperature = avgTemp
+            , avgRainfall = avgRain
+            , avgWindSpeed = avgWind
+            , avgHumidity = avgHum
+            , avgPressure = avgPres
+            }
+
+      let (sev, reason) = classifyWithHistory weather avg
+
+      json $ object
+        [ "severity" .= sev
+        , "reason" .= reason
         ]

@@ -21,6 +21,8 @@
 
 /* ===== Dashboard Card ===== */
 .dashboard-card {
+  grid-column: 1;
+  grid-row: 1;
   background: var(--color-surface);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
@@ -273,6 +275,8 @@
    RIGHT PANEL — Alert Details
    ============================================== */
 .details-panel {
+  grid-column: 2;
+  grid-row: 1;
   background: var(--color-surface);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
@@ -419,6 +423,26 @@
     grid-template-columns: 1fr;
     max-width: 520px;
   }
+  
+  .dashboard-card {
+    grid-column: 1;
+    grid-row: auto;
+  }
+  
+  .details-panel {
+    grid-column: 1;
+    grid-row: auto;
+  }
+  
+  .global-alerts-container {
+    grid-column: 1;
+    grid-row: auto;
+  }
+  
+  .monitor-container {
+    grid-column: 1;
+    grid-row: auto;
+  }
 }
 
 @media (max-width: 480px) {
@@ -446,6 +470,7 @@
 /* ===== Global Alerts Section ===== */
 .global-alerts-container {
   grid-column: 1 / -1;
+  grid-row: 2;
   margin-top: 1.5rem;
   animation: fadeIn 0.8s ease-out;
 }
@@ -523,6 +548,7 @@
 /* ===== Regional Alert Monitor ===== */
 .monitor-container {
   grid-column: 1 / -1;
+  grid-row: 3;
   margin-top: 1.5rem;
   animation: fadeIn 0.8s ease-out;
 }
