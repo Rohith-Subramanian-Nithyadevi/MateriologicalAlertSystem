@@ -1,13 +1,10 @@
 {-# LANGUAGE OverloadedStrings #-}
 import System.Environment (lookupEnv)
-import Text.Read (readMaybe)
 import Web.Scotty
 import Data.Aeson (object, (.=))
 import Types
 import Classifier
-
 import Network.Wai.Middleware.Cors (simpleCors)
-
 
 main :: IO ()
 main = do
@@ -18,7 +15,6 @@ main = do
     middleware simpleCors
 
     get "/classify" $ do
-
       temp <- queryParam "temp"
       rain <- queryParam "rain"
       wind <- queryParam "wind"
@@ -27,27 +23,26 @@ main = do
 
       let weather = Weather
             { temperature = temp
-            , rainfall = rain
-            , windSpeed = wind
-            , humidity = hum
-            , pressure = pres
+            , rainfall    = rain
+            , windSpeed   = wind
+            , humidity    = hum
+            , pressure    = pres
             }
 
-      let (sev, reason) = classify weather
+      let (sev, reason, disasterType) = classify weather
 
       json $ object
-        [ "severity" .= sev
-        , "reason" .= reason
+        [ "severity"     .= sev
+        , "reason"       .= reason
+        , "disasterType" .= disasterType
         ]
 
     get "/classifyWithHistory" $ do
-
-      temp <- queryParam "temp"
-      rain <- queryParam "rain"
-      wind <- queryParam "wind"
-      hum  <- queryParam "humidity"
-      pres <- queryParam "pressure"
-      
+      temp    <- queryParam "temp"
+      rain    <- queryParam "rain"
+      wind    <- queryParam "wind"
+      hum     <- queryParam "humidity"
+      pres    <- queryParam "pressure"
       avgTemp <- queryParam "avg_temp"
       avgRain <- queryParam "avg_rain"
       avgWind <- queryParam "avg_wind"
@@ -56,23 +51,23 @@ main = do
 
       let weather = Weather
             { temperature = temp
-            , rainfall = rain
-            , windSpeed = wind
-            , humidity = hum
-            , pressure = pres
+            , rainfall    = rain
+            , windSpeed   = wind
+            , humidity    = hum
+            , pressure    = pres
             }
-
       let avg = WeatherAverage
             { avgTemperature = avgTemp
-            , avgRainfall = avgRain
-            , avgWindSpeed = avgWind
-            , avgHumidity = avgHum
-            , avgPressure = avgPres
+            , avgRainfall    = avgRain
+            , avgWindSpeed   = avgWind
+            , avgHumidity    = avgHum
+            , avgPressure    = avgPres
             }
 
-      let (sev, reason) = classifyWithHistory weather avg
+      let (sev, reason, disasterType) = classifyWithHistory weather avg
 
       json $ object
-        [ "severity" .= sev
-        , "reason" .= reason
+        [ "severity"     .= sev
+        , "reason"       .= reason
+        , "disasterType" .= disasterType
         ]

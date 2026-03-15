@@ -772,3 +772,14 @@
     grid-template-columns: 1fr;
   }
 }
+/* ===== Pressure full-width stat card fix ===== */
+.weather-stats + .stat-card {
+  margin-bottom: 1rem;
+}
+
+/* ===== Risk Fingerprint label ===== */
+.section-title {
+  display: flex;
+  align-items: baseline;
+  gap: 0;
+}
