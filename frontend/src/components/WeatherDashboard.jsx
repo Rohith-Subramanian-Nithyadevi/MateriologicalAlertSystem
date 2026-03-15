@@ -2,883 +2,1212 @@ import { useState, useEffect, useCallback } from 'react'
 
 const BACKEND_URL = "https://meteorological-backend.onrender.com"
 
-// ─── Severity config ────────────────────────────────────────────────────────
-const SEVERITY_CONFIG = {
-  Low:      { emoji: '✅', className: 'low' },
-  Moderate: { emoji: '⚠️', className: 'moderate' },
-  High:     { emoji: '🔶', className: 'high' },
-  Extreme:  { emoji: '🔴', className: 'extreme' },
+// ─── Config ──────────────────────────────────────────────────────────────────
+
+const SEV = {
+  Low:      { emoji:'✅', cls:'low',      color:'#4ade80' },
+  Moderate: { emoji:'⚠️', cls:'moderate', color:'#fbbf24' },
+  High:     { emoji:'🔶', cls:'high',     color:'#fb923c' },
+  Extreme:  { emoji:'🔴', cls:'extreme',  color:'#f87171' },
 }
 
-// ─── Disaster type config ────────────────────────────────────────────────────
-const DISASTER_CONFIG = {
-  'Cyclone Watch':     { emoji: '🌀', color: '#818cf8', bg: 'rgba(129,140,248,0.12)', border: 'rgba(129,140,248,0.35)' },
-  'Storm Surge':       { emoji: '🌊', color: '#38bdf8', bg: 'rgba(56,189,248,0.12)',  border: 'rgba(56,189,248,0.35)'  },
-  'Flood Risk':        { emoji: '💧', color: '#38bdf8', bg: 'rgba(56,189,248,0.12)',  border: 'rgba(56,189,248,0.35)'  },
-  'Heat Stress':       { emoji: '🔥', color: '#f97316', bg: 'rgba(249,115,22,0.12)',  border: 'rgba(249,115,22,0.35)'  },
-  'Cold Stress':       { emoji: '❄️', color: '#93c5fd', bg: 'rgba(147,197,253,0.12)', border: 'rgba(147,197,253,0.35)' },
-  'Thunderstorm Risk': { emoji: '⛈️', color: '#a78bfa', bg: 'rgba(167,139,250,0.12)', border: 'rgba(167,139,250,0.35)' },
-  'Compound Risk':     { emoji: '⚡', color: '#f59e0b', bg: 'rgba(245,158,11,0.12)',  border: 'rgba(245,158,11,0.35)'  },
-  'No Threat':         { emoji: '✅', color: '#22c55e', bg: 'rgba(34,197,94,0.12)',   border: 'rgba(34,197,94,0.35)'   },
+const DIS = {
+  'Cyclone Watch':     { emoji:'🌀', color:'#818cf8', bg:'rgba(129,140,248,0.12)', bdr:'rgba(129,140,248,0.3)' },
+  'Storm Surge':       { emoji:'🌊', color:'#22d3ee', bg:'rgba(34,211,238,0.12)',  bdr:'rgba(34,211,238,0.3)'  },
+  'Flood Risk':        { emoji:'💧', color:'#22d3ee', bg:'rgba(34,211,238,0.12)',  bdr:'rgba(34,211,238,0.3)'  },
+  'Heat Stress':       { emoji:'🔥', color:'#fb923c', bg:'rgba(251,146,60,0.12)',  bdr:'rgba(251,146,60,0.3)'  },
+  'Cold Stress':       { emoji:'❄️', color:'#93c5fd', bg:'rgba(147,197,253,0.12)', bdr:'rgba(147,197,253,0.3)' },
+  'Thunderstorm Risk': { emoji:'⛈️', color:'#a78bfa', bg:'rgba(167,139,250,0.12)', bdr:'rgba(167,139,250,0.3)' },
+  'Compound Risk':     { emoji:'⚡', color:'#fbbf24', bg:'rgba(251,191,36,0.12)',  bdr:'rgba(251,191,36,0.3)'  },
+  'No Threat':         { emoji:'✅', color:'#4ade80', bg:'rgba(74,222,128,0.12)',  bdr:'rgba(74,222,128,0.3)'  },
 }
 
-// ─── Global scan cities ──────────────────────────────────────────────────────
-const GLOBAL_SCAN_CITIES = [
-  { name: 'Mumbai',           country: 'India',       lat: 19.08,  lon: 72.88  },
-  { name: 'Delhi',            country: 'India',       lat: 28.61,  lon: 77.21  },
-  { name: 'Chennai',          country: 'India',       lat: 13.08,  lon: 80.27  },
-  { name: 'Kolkata',          country: 'India',       lat: 22.57,  lon: 88.36  },
-  { name: 'Dhaka',            country: 'Bangladesh',  lat: 23.81,  lon: 90.41  },
-  { name: 'Tokyo',            country: 'Japan',       lat: 35.68,  lon: 139.69 },
-  { name: 'Manila',           country: 'Philippines', lat: 14.60,  lon: 120.98 },
-  { name: 'Ho Chi Minh City', country: 'Vietnam',     lat: 10.82,  lon: 106.63 },
-  { name: 'Bangkok',          country: 'Thailand',    lat: 13.75,  lon: 100.52 },
-  { name: 'Jakarta',          country: 'Indonesia',   lat: -6.21,  lon: 106.85 },
-  { name: 'Shanghai',         country: 'China',       lat: 31.23,  lon: 121.47 },
-  { name: 'Beijing',          country: 'China',       lat: 39.90,  lon: 116.40 },
-  { name: 'Hong Kong',        country: 'China',       lat: 22.32,  lon: 114.17 },
-  { name: 'Taipei',           country: 'Taiwan',      lat: 25.03,  lon: 121.57 },
-  { name: 'Seoul',            country: 'South Korea', lat: 37.57,  lon: 126.98 },
-  { name: 'London',           country: 'UK',          lat: 51.51,  lon: -0.13  },
-  { name: 'Miami',            country: 'USA',         lat: 25.76,  lon: -80.19 },
-  { name: 'Houston',          country: 'USA',         lat: 29.76,  lon: -95.37 },
-  { name: 'New York',         country: 'USA',         lat: 40.71,  lon: -74.01 },
-  { name: 'Mexico City',      country: 'Mexico',      lat: 19.43,  lon: -99.13 },
-  { name: 'São Paulo',        country: 'Brazil',      lat: -23.55, lon: -46.63 },
-  { name: 'Lagos',            country: 'Nigeria',     lat: 6.52,   lon: 3.38   },
-  { name: 'Nairobi',          country: 'Kenya',       lat: -1.29,  lon: 36.82  },
-  { name: 'Cairo',            country: 'Egypt',       lat: 30.04,  lon: 31.24  },
-  { name: 'Sydney',           country: 'Australia',   lat: -33.87, lon: 151.21 },
-  { name: 'Dubai',            country: 'UAE',         lat: 25.20,  lon: 55.27  },
-  { name: 'Karachi',          country: 'Pakistan',    lat: 24.86,  lon: 67.01  },
-  { name: 'Colombo',          country: 'Sri Lanka',   lat: 6.93,   lon: 79.84  },
-  { name: 'Yangon',           country: 'Myanmar',     lat: 16.87,  lon: 96.20  },
-  { name: 'Havana',           country: 'Cuba',        lat: 23.11,  lon: -82.37 },
+const CITIES = [
+  { name:'Mumbai',           country:'India',       lat:19.08,  lon:72.88  },
+  { name:'Delhi',            country:'India',       lat:28.61,  lon:77.21  },
+  { name:'Chennai',          country:'India',       lat:13.08,  lon:80.27  },
+  { name:'Kolkata',          country:'India',       lat:22.57,  lon:88.36  },
+  { name:'Dhaka',            country:'Bangladesh',  lat:23.81,  lon:90.41  },
+  { name:'Tokyo',            country:'Japan',       lat:35.68,  lon:139.69 },
+  { name:'Manila',           country:'Philippines', lat:14.60,  lon:120.98 },
+  { name:'Ho Chi Minh City', country:'Vietnam',     lat:10.82,  lon:106.63 },
+  { name:'Bangkok',          country:'Thailand',    lat:13.75,  lon:100.52 },
+  { name:'Jakarta',          country:'Indonesia',   lat:-6.21,  lon:106.85 },
+  { name:'Shanghai',         country:'China',       lat:31.23,  lon:121.47 },
+  { name:'Beijing',          country:'China',       lat:39.90,  lon:116.40 },
+  { name:'Hong Kong',        country:'China',       lat:22.32,  lon:114.17 },
+  { name:'Seoul',            country:'South Korea', lat:37.57,  lon:126.98 },
+  { name:'London',           country:'UK',          lat:51.51,  lon:-0.13  },
+  { name:'Miami',            country:'USA',         lat:25.76,  lon:-80.19 },
+  { name:'Houston',          country:'USA',         lat:29.76,  lon:-95.37 },
+  { name:'New York',         country:'USA',         lat:40.71,  lon:-74.01 },
+  { name:'Mexico City',      country:'Mexico',      lat:19.43,  lon:-99.13 },
+  { name:'São Paulo',        country:'Brazil',      lat:-23.55, lon:-46.63 },
+  { name:'Lagos',            country:'Nigeria',     lat:6.52,   lon:3.38   },
+  { name:'Cairo',            country:'Egypt',       lat:30.04,  lon:31.24  },
+  { name:'Sydney',           country:'Australia',   lat:-33.87, lon:151.21 },
+  { name:'Dubai',            country:'UAE',         lat:25.20,  lon:55.27  },
+  { name:'Karachi',          country:'Pakistan',    lat:24.86,  lon:67.01  },
+  { name:'Colombo',          country:'Sri Lanka',   lat:6.93,   lon:79.84  },
+  { name:'Yangon',           country:'Myanmar',     lat:16.87,  lon:96.20  },
+  { name:'Havana',           country:'Cuba',        lat:23.11,  lon:-82.37 },
+  { name:'Nairobi',          country:'Kenya',       lat:-1.29,  lon:36.82  },
+  { name:'Taipei',           country:'Taiwan',      lat:25.03,  lon:121.57 },
 ]
 
-// ─────────────────────────────────────────────────────────────────────────────
-// HELPERS
-// ─────────────────────────────────────────────────────────────────────────────
+// ─── Pure utility functions ───────────────────────────────────────────────────
 
-/** Steadman Heat Index — returns apparent °C or null if not meaningful */
-function calculateHeatIndex(tempC, rh) {
-  if (tempC < 27) return null
-  const tf = tempC * 9 / 5 + 32
-  const hi =
-    -42.379 +
-    2.04901523   * tf +
-    10.14333127  * rh -
-    0.22475541   * tf * rh -
-    6.83783e-3   * tf * tf -
-    5.481717e-2  * rh * rh +
-    1.22874e-3   * tf * tf * rh +
-    8.5282e-4    * tf * rh  * rh -
-    1.99e-6      * tf * tf  * rh * rh
-  const hiC = (hi - 32) * 5 / 9
-  return hiC > tempC + 2 ? Math.round(hiC * 10) / 10 : null
+const compass = deg => {
+  const d = ['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW']
+  return d[Math.round((deg ?? 0) / 22.5) % 16]
 }
 
-/** Return trend arrow, label, and colour for a parameter vs its 30-day average */
-function getTrend(current, average, invertBad = false) {
-  const diff = current - average
-  if (Math.abs(diff) < 0.5) return { symbol: '→', label: 'Stable', color: '#64748b' }
-  const rising = diff > 0
-  const badColor  = '#ef4444'
-  const goodColor = '#22c55e'
-  const color = (rising !== invertBad) ? badColor : goodColor
+function heatIndex(tc, rh) {
+  if (tc < 27) return null
+  const tf = tc * 9/5 + 32
+  const h  = -42.379 + 2.04901523*tf + 10.14333127*rh - 0.22475541*tf*rh
+           - 6.83783e-3*tf*tf - 5.481717e-2*rh*rh + 1.22874e-3*tf*tf*rh
+           + 8.5282e-4*tf*rh*rh - 1.99e-6*tf*tf*rh*rh
+  const hc = (h - 32) * 5/9
+  return hc > tc + 2 ? Math.round(hc * 10)/10 : null
+}
+
+function trend(cur, avg, invertBad = false) {
+  const d = cur - avg
+  if (Math.abs(d) < 0.5) return { sym:'→', label:'Stable', color:'#3d6275' }
+  const up = d > 0
   return {
-    symbol: rising ? '↑' : '↓',
-    label: `${rising ? '+' : ''}${diff.toFixed(1)}`,
-    color,
+    sym: up ? '↑' : '↓',
+    label: `${up?'+':''}${d.toFixed(1)}`,
+    color: (up !== invertBad) ? '#f87171' : '#4ade80'
   }
 }
 
-/**
- * Compound Risk Score — grades each of the 5 parameters 0→max
- * Returns { score, maxScore, pct, bars[] }
- * This is the "Risk Fingerprint" unique feature.
- */
-function getCompoundScore(weather) {
-  const { temp, wind, rain, humidity, pressure } = weather
+function classifyFE({ temp, wind, rain, pressure, humidity=50 }) {
+  if ((pressure < 970 && wind > 88) || rain > 204 || wind > 117 || temp > 47 || temp < -10) return 'Extreme'
+  if (rain > 115 || wind > 88 || wind > 61 || temp > 40 || temp < 0 ||
+      (pressure < 990 && wind > 61) || (humidity > 90 && temp > 40)) return 'High'
+  if (rain > 64 || wind > 40 || pressure < 990 || humidity > 90) return 'Moderate'
+  return 'Low'
+}
+
+function disasterFE({ wind, rain, pressure, temp, humidity=50 }) {
+  if (pressure < 970 && wind > 88 && rain > 64) return 'Cyclone Watch'
+  if (pressure < 970 && wind > 117) return 'Storm Surge'
+  if (rain > 115) return 'Flood Risk'
+  if (temp > 40 && humidity > 75) return 'Heat Stress'
+  if (temp < 0) return 'Cold Stress'
+  if (wind > 40 && rain > 15 && pressure < 1005) return 'Thunderstorm Risk'
+  return 'No Threat'
+}
+
+function stormApproach(hrs) {
+  if (!hrs?.length) return []
+  const h   = hrs.slice(0, Math.min(48, hrs.length))
+  const p0  = h[0]?.pressure ?? 1013
+  const p24 = h[Math.min(23, h.length-1)]?.pressure ?? 1013
+  const drop  = p0 - p24
+  const peakW = Math.max(...h.map(x => x.wind ?? 0))
+  const peakR = Math.max(...h.map(x => x.rain ?? 0))
+  const wIdx  = h.findIndex(x => x.wind === peakW)
+  const rIdx  = h.findIndex(x => x.rain === peakR)
+  const out = []
+  if      (drop > 20) out.push({ icon:'🌀', sev:'Extreme', msg:`Explosive cyclogenesis — pressure falling ${drop.toFixed(1)} hPa/24h. Severe storm imminent.` })
+  else if (drop > 10) out.push({ icon:'📉', sev:'High',    msg:`Rapid pressure drop ${drop.toFixed(1)} hPa/24h — active storm system developing.` })
+  else if (drop > 5)  out.push({ icon:'⬇️', sev:'Moderate',msg:`Pressure falling ${drop.toFixed(1)} hPa/24h — conditions deteriorating.` })
+  if      (peakR > 115) out.push({ icon:'🌧️', sev:'High',    msg:`Very Heavy rain (~${peakR.toFixed(0)}mm) forecast in ~${rIdx}h — flash flood risk.` })
+  else if (peakR > 64)  out.push({ icon:'🌦️', sev:'Moderate',msg:`Heavy rain (~${peakR.toFixed(0)}mm) expected in ~${rIdx}h.` })
+  if      (peakW > 88)  out.push({ icon:'🌪️', sev:'High',    msg:`Storm-force winds (~${peakW.toFixed(0)} km/h) in ~${wIdx}h — structural damage risk.` })
+  else if (peakW > 61)  out.push({ icon:'💨', sev:'Moderate',msg:`Gale-force winds (~${peakW.toFixed(0)} km/h) in ~${wIdx}h — secure loose objects.` })
+  const o = { Extreme:0, High:1, Moderate:2 }
+  return out.sort((a,b) => (o[a.sev]??3) - (o[b.sev]??3))
+}
+
+function compound(w) {
+  const { temp, wind, rain, humidity, pressure } = w
   let score = 0
   const bars = []
 
-  // Rainfall  (max 3)
-  if      (rain > 204) { score += 3; bars.push({ label: 'Rainfall',    pct: 100, level: 'extreme', value: `${rain}mm` }) }
-  else if (rain > 115) { score += 2; bars.push({ label: 'Rainfall',    pct: 70,  level: 'high',    value: `${rain}mm` }) }
-  else if (rain > 64)  { score += 1; bars.push({ label: 'Rainfall',    pct: 42,  level: 'moderate',value: `${rain}mm` }) }
-  else                               bars.push({ label: 'Rainfall',    pct: Math.min(rain / 64 * 30, 30), level: 'low', value: `${rain}mm` })
+  if      (rain > 204) { score+=3; bars.push({ l:'Rainfall',    p:100, lv:'extreme', v:`${rain}mm`    }) }
+  else if (rain > 115) { score+=2; bars.push({ l:'Rainfall',    p:70,  lv:'high',    v:`${rain}mm`    }) }
+  else if (rain > 64)  { score+=1; bars.push({ l:'Rainfall',    p:42,  lv:'moderate',v:`${rain}mm`    }) }
+  else                             bars.push({ l:'Rainfall',    p:Math.min(rain/64*30,30), lv:'low', v:`${rain}mm` })
 
-  // Wind Speed (max 3)
-  if      (wind > 117) { score += 3; bars.push({ label: 'Wind Speed',  pct: 100, level: 'extreme', value: `${wind}km/h` }) }
-  else if (wind > 88)  { score += 2; bars.push({ label: 'Wind Speed',  pct: 70,  level: 'high',    value: `${wind}km/h` }) }
-  else if (wind > 61)  { score += 1; bars.push({ label: 'Wind Speed',  pct: 44,  level: 'moderate',value: `${wind}km/h` }) }
-  else                               bars.push({ label: 'Wind Speed',  pct: Math.min(wind / 61 * 35, 35), level: 'low', value: `${wind}km/h` })
+  if      (wind > 117) { score+=3; bars.push({ l:'Wind',        p:100, lv:'extreme', v:`${wind}km/h`  }) }
+  else if (wind > 88)  { score+=2; bars.push({ l:'Wind',        p:70,  lv:'high',    v:`${wind}km/h`  }) }
+  else if (wind > 61)  { score+=1; bars.push({ l:'Wind',        p:44,  lv:'moderate',v:`${wind}km/h`  }) }
+  else                             bars.push({ l:'Wind',        p:Math.min(wind/61*35,35), lv:'low', v:`${wind}km/h` })
 
-  // Temperature (max 2)
-  if      (temp > 47 || temp < -10) { score += 2; bars.push({ label: 'Temperature', pct: 100, level: 'extreme', value: `${temp}°C` }) }
-  else if (temp > 40 || temp <   0) { score += 1; bars.push({ label: 'Temperature', pct: 60,  level: 'high',    value: `${temp}°C` }) }
-  else                                             bars.push({ label: 'Temperature', pct: 20,  level: 'low',     value: `${temp}°C` })
+  if      (temp>47||temp<-10) { score+=2; bars.push({ l:'Temperature', p:100, lv:'extreme', v:`${temp}°C` }) }
+  else if (temp>40||temp<0)   { score+=1; bars.push({ l:'Temperature', p:60,  lv:'high',    v:`${temp}°C` }) }
+  else                                    bars.push({ l:'Temperature', p:20,  lv:'low',     v:`${temp}°C` })
 
-  // Pressure (max 2) — lower is worse
-  if      (pressure < 970)  { score += 2; bars.push({ label: 'Pressure', pct: 100, level: 'extreme', value: `${pressure}hPa` }) }
-  else if (pressure < 990)  { score += 1; bars.push({ label: 'Pressure', pct: 60,  level: 'high',    value: `${pressure}hPa` }) }
-  else                                    bars.push({ label: 'Pressure', pct: Math.max(0, Math.min((1013 - pressure) / 43 * 40, 40)), level: 'low', value: `${pressure}hPa` })
+  if      (pressure < 970)  { score+=2; bars.push({ l:'Pressure', p:100, lv:'extreme', v:`${pressure}hPa` }) }
+  else if (pressure < 990)  { score+=1; bars.push({ l:'Pressure', p:60,  lv:'high',    v:`${pressure}hPa` }) }
+  else                                  bars.push({ l:'Pressure', p:Math.max(0,Math.min((1013-pressure)/43*40,40)), lv:'low', v:`${pressure}hPa` })
 
-  // Heat Index / Humidity (max 1)
-  const hi = calculateHeatIndex(temp, humidity)
+  const hi = heatIndex(temp, humidity)
   if (humidity > 90 && temp > 35) {
     score += 1
-    bars.push({ label: 'Heat Index', pct: 100, level: 'high', value: hi ? `${hi}°C feels-like` : `${humidity}%` })
+    bars.push({ l:'Heat Index', p:100, lv:'high', v: hi ? `${hi}°C` : `${humidity}%` })
   } else {
-    bars.push({ label: 'Heat Index', pct: Math.min(humidity / 90 * 45, 45), level: 'low', value: hi ? `${hi}°C feels-like` : `${humidity}%` })
+    bars.push({ l:'Heat Index', p:Math.min(humidity/90*45,45), lv:'low', v: hi ? `${hi}°C` : `${humidity}%` })
   }
 
-  return { score, maxScore: 11, pct: Math.round(score / 11 * 100), bars }
+  return { score, pct: Math.round(score/11*100), bars }
 }
 
-/** Generate a dynamic, value-specific assessment paragraph */
-function generateDynamicAssessment(weather, severity, disasterType) {
-  const { temp, wind, rain, humidity, pressure } = weather
-  const hi = calculateHeatIndex(temp, humidity)
-
-  if (severity === 'Low') {
-    return `All monitored parameters are within normal safe ranges — temperature ${temp}°C, wind ${wind} km/h, rainfall ${rain} mm, pressure ${pressure} hPa, humidity ${humidity}%. No weather-related disruptions are anticipated.`
-  }
-
-  switch (disasterType) {
-    case 'Cyclone Watch':
-      return `Three-parameter compound event detected: pressure of ${pressure} hPa (${pressure < 970 ? 'extreme' : 'very'} low), wind speed of ${wind} km/h, and ${rain} mm rainfall occurring simultaneously — classic indicators of a developing tropical cyclonic system. Conditions are likely to deteriorate rapidly.`
-
-    case 'Storm Surge':
-      return `Extreme atmospheric pressure (${pressure} hPa) combined with hurricane-force winds (${wind} km/h) present severe coastal storm surge risk. Significant inland flooding and structural damage are probable.`
-
-    case 'Flood Risk':
-      return `Rainfall of ${rain} mm ${rain > 204 ? 'exceeds the IMD Extremely Heavy threshold (>204 mm)' : 'exceeds the IMD Very Heavy threshold (>115 mm)'}. Flash flooding, waterlogging, and inundation of low-lying areas are highly probable. River levels may rise rapidly.`
-
-    case 'Heat Stress':
-      return `Temperature of ${temp}°C combined with ${humidity}% relative humidity creates dangerous heat stress.${hi ? ` The heat index (apparent temperature) is ${hi}°C — the body experiences conditions ${Math.round(hi - temp)}°C hotter than ambient.` : ''} Risk of heat exhaustion and heat stroke is elevated, particularly for outdoor workers and vulnerable populations.`
-
-    case 'Cold Stress':
-      return `Temperature of ${temp}°C ${temp < 0 ? 'is below freezing' : 'represents severe cold wave conditions'}. Wind chill at ${wind} km/h significantly amplifies thermal stress. Risk of hypothermia, frostbite, and cold-related cardiovascular events is elevated.`
-
-    case 'Thunderstorm Risk':
-      return `Falling pressure (${pressure} hPa), gusty winds of ${wind} km/h, and ${rain} mm of rainfall indicate active convective storm conditions. Expect lightning, localised heavy downpours, and sudden wind gusts.`
-
-    case 'Compound Risk':
-      return `Multiple meteorological parameters are simultaneously above safe thresholds (wind: ${wind} km/h, rain: ${rain} mm, pressure: ${pressure} hPa, temp: ${temp}°C). Compound hazard events carry disproportionately higher risk than any single parameter would indicate in isolation.`
-
-    default:
-      return `${severity === 'Moderate' ? 'One or more' : 'Multiple'} weather parameters have exceeded baseline thresholds — temperature: ${temp}°C, wind: ${wind} km/h, rainfall: ${rain} mm, pressure: ${pressure} hPa. Conditions warrant close monitoring.`
+function dynAssess(w, sev, dtype) {
+  const { temp, wind, rain, humidity, pressure } = w
+  const hi = heatIndex(temp, humidity)
+  if (sev === 'Low') return `All parameters within normal safe ranges — temperature ${temp}°C, wind ${wind} km/h, rainfall ${rain} mm, pressure ${pressure} hPa. No disruptions anticipated.`
+  switch (dtype) {
+    case 'Cyclone Watch':     return `Three-parameter compound event: pressure ${pressure} hPa, wind ${wind} km/h, rainfall ${rain} mm — tropical cyclonic system indicators. Conditions likely to deteriorate rapidly.`
+    case 'Storm Surge':       return `Extreme pressure (${pressure} hPa) with hurricane-force winds (${wind} km/h) present severe coastal storm surge risk. Significant flooding and structural damage probable.`
+    case 'Flood Risk':        return `Rainfall ${rain} mm ${rain>204?'exceeds IMD Extremely Heavy (>204mm) threshold':'exceeds IMD Very Heavy (>115mm) threshold'}. Flash flooding and rapid river level rises are highly probable.`
+    case 'Heat Stress':       return `Temperature ${temp}°C with ${humidity}% humidity creates dangerous heat stress.${hi?` Heat index: ${hi}°C — body experiences ${Math.round(hi-temp)}°C above ambient.`:''} Risk of heat exhaustion and heat stroke elevated.`
+    case 'Cold Stress':       return `Temperature ${temp}°C ${temp<0?'below freezing':'severe cold wave'}. Wind chill at ${wind} km/h amplifies thermal stress. Hypothermia and frostbite risk elevated.`
+    case 'Thunderstorm Risk': return `Falling pressure (${pressure} hPa), gusty winds (${wind} km/h), and ${rain} mm rainfall indicate active convective storm. Expect lightning and sudden gusts.`
+    case 'Compound Risk':     return `Multiple parameters simultaneously above thresholds — wind: ${wind} km/h, rain: ${rain} mm, pressure: ${pressure} hPa, temp: ${temp}°C. Compound events carry disproportionately higher risk.`
+    default: return `${sev==='Moderate'?'One or more':'Multiple'} parameters exceeded thresholds — temperature: ${temp}°C, wind: ${wind} km/h, rainfall: ${rain} mm, pressure: ${pressure} hPa. Conditions warrant monitoring.`
   }
 }
 
-/** Generate dynamic, value-specific safety advisories */
-function generateDynamicAdvisories(weather, severity, disasterType) {
-  const { temp, wind, rain, pressure } = weather
-  const hi = calculateHeatIndex(temp, weather.humidity)
-  const advisories = []
-
-  if (severity === 'Low') {
-    return [
-      'No special precautions required — all parameters within safe ranges',
-      'Continue monitoring periodic IMD / local weather forecast updates',
-      'Outdoor activities may proceed normally',
-    ]
+function dynAdvisories(w, sev, dtype) {
+  const { temp, wind, rain, pressure } = w
+  const hi = heatIndex(temp, w.humidity)
+  if (sev === 'Low') return [
+    'No special precautions required — all parameters within safe ranges',
+    'Continue monitoring periodic IMD / local weather forecast updates',
+    'Outdoor activities may proceed normally',
+  ]
+  const a = []
+  if (dtype==='Cyclone Watch' || dtype==='Storm Surge') {
+    a.push('Move to designated shelter or higher ground immediately')
+    a.push('Comply with all official evacuation orders without delay')
+    a.push('Board windows; move vehicles away from coastal/low-lying areas')
   }
-
-  if (disasterType === 'Cyclone Watch' || disasterType === 'Storm Surge') {
-    advisories.push('Move to designated shelter or higher ground immediately — do not wait for conditions to worsen')
-    advisories.push('Comply with all official evacuation orders without delay')
-    advisories.push(`Board windows; move vehicles away from coastal and low-lying areas`)
-    advisories.push('Avoid rivers, streams, and flooded roads — even shallow water can be dangerous')
+  if (dtype==='Flood Risk' || rain>100) {
+    a.push(`Avoid all low-lying areas and underpasses — ${rain}mm can cause flash flooding`)
+    a.push('Do not cross flooded roads or waterways by foot or vehicle')
   }
-
-  if (disasterType === 'Flood Risk' || rain > 100) {
-    advisories.push(`Avoid all low-lying areas, underpasses, and basements — ${rain} mm rainfall can cause flash flooding within minutes`)
-    advisories.push('Do not attempt to cross flooded roads, bridges, or waterways by foot or vehicle')
-    advisories.push('Move important documents, electronics, and valuables to upper floors')
+  if (dtype==='Heat Stress' || temp>=38) {
+    a.push(`Drink 250ml water every 20 min — apparent ${hi??temp}°C causes rapid dehydration`)
+    a.push('Avoid strenuous outdoor activity between 11 AM – 4 PM')
   }
-
-  if (disasterType === 'Heat Stress' || temp >= 38) {
-    advisories.push(`Drink 250 ml of water every 20 minutes — at ${hi ?? temp}°C apparent temperature, dehydration occurs rapidly`)
-    advisories.push('Avoid all strenuous outdoor activity between 11 AM – 4 PM')
-    advisories.push('Check on elderly neighbours, young children, and pets every 2 hours')
-    advisories.push('Use ORS (oral rehydration salts) if experiencing dizziness or cramps')
+  if (dtype==='Cold Stress' || temp<=0) {
+    a.push(`Wear 3+ insulating layers — wind chill at ${wind}km/h creates frostbite risk`)
+    a.push('Recognise hypothermia signs: shivering, confusion, slurred speech')
   }
-
-  if (disasterType === 'Cold Stress' || temp <= 0) {
-    advisories.push(`Wear 3+ insulating layers — wind chill at ${wind} km/h with ${temp}°C creates frostbite risk within 30 minutes of exposure`)
-    advisories.push('Avoid prolonged outdoor exposure; recognise hypothermia signs: shivering, confusion, slurred speech')
-    advisories.push('Ensure heating systems are functional and fuel/gas reserves are adequate')
+  if (dtype==='Thunderstorm Risk') {
+    a.push('Stay indoors; avoid open fields, tall trees, and elevated terrain')
+    a.push('Unplug sensitive electronics — lightning causes power surges')
   }
-
-  if (disasterType === 'Thunderstorm Risk') {
-    advisories.push('Stay indoors; avoid open fields, tall trees, and elevated terrain')
-    advisories.push('Unplug sensitive electronics — lightning strikes can cause power surges')
-    advisories.push('If caught outdoors, crouch low with feet together — do not lie flat')
-  }
-
-  if (wind > 60) {
-    advisories.push(`Secure all loose outdoor objects — ${wind} km/h winds can propel debris at dangerous velocities`)
-    advisories.push('Stay away from construction sites, trees, and power lines')
-  }
-
-  if (pressure < 990) {
-    advisories.push(`Pressure at ${pressure} hPa and falling — monitor IMD bulletins every 30 minutes for system updates`)
-  }
-
-  if (severity === 'High' || severity === 'Extreme') {
-    advisories.push('Prepare emergency kit: 3-day water supply (4L/person/day), first-aid, torch, fully charged power bank')
-    advisories.push('Keep IMD / NDMA alert channels open: ndma.gov.in or Sachet app')
-  }
-
-  if (severity === 'Extreme') {
-    advisories.push('Contact emergency services immediately if in danger — NDRF helpline: 9711077372')
-    advisories.push('Assist vulnerable individuals: elderly, children, and persons with disabilities')
-  }
-
-  if (advisories.length === 0) {
-    advisories.push('Monitor official IMD weather forecasts and local emergency notifications')
-    advisories.push('Carry weather-appropriate gear if travelling outdoors')
-  }
-
-  return advisories
+  if (wind > 60) a.push(`Secure all loose outdoor objects — ${wind}km/h winds propel debris dangerously`)
+  if (pressure < 990) a.push(`Pressure at ${pressure}hPa and falling — monitor IMD bulletins every 30 min`)
+  if (sev==='High' || sev==='Extreme') a.push('Prepare emergency kit: 3-day water supply, first-aid, torch, fully charged power bank')
+  if (sev==='Extreme') a.push('Contact emergency services if in danger — NDRF helpline: 9711077372')
+  return a.length ? a : ['Monitor official IMD weather forecasts and local emergency notifications']
 }
 
-/** Keep original getAlertReasons for "Contributing Factors" section */
-function getAlertReasons(weather) {
-  const reasons = []
-
-  if (weather.rain > 200)      reasons.push({ icon: '🌧️', text: `Rainfall: ${weather.rain} mm — exceeds 204 mm IMD Extremely Heavy threshold` })
-  else if (weather.rain > 115) reasons.push({ icon: '🌧️', text: `Rainfall: ${weather.rain} mm — exceeds 115 mm Very Heavy threshold` })
-  else if (weather.rain > 64)  reasons.push({ icon: '🌧️', text: `Rainfall: ${weather.rain} mm — exceeds 64 mm Heavy threshold` })
-
-  if (weather.wind > 117)      reasons.push({ icon: '🌪️', text: `Wind: ${weather.wind} km/h — hurricane-force (>117 km/h)` })
-  else if (weather.wind > 88)  reasons.push({ icon: '💨', text: `Wind: ${weather.wind} km/h — storm-force (>88 km/h)` })
-  else if (weather.wind > 61)  reasons.push({ icon: '💨', text: `Wind: ${weather.wind} km/h — gale-force (>61 km/h)` })
-
-  const hi = calculateHeatIndex(weather.temp, weather.humidity)
-  if (weather.temp > 47)       reasons.push({ icon: '🔥', text: `Temperature: ${weather.temp}°C — IMD Severe Heat Wave (>47°C)` })
-  else if (weather.temp > 40)  reasons.push({ icon: '☀️', text: `Temperature: ${weather.temp}°C — IMD Heat Wave (>40°C)${hi ? `; feels like ${hi}°C` : ''}` })
-  else if (weather.temp < -10) reasons.push({ icon: '🥶', text: `Temperature: ${weather.temp}°C — extreme cold (<−10°C)` })
-  else if (weather.temp < 0)   reasons.push({ icon: '❄️', text: `Temperature: ${weather.temp}°C — below freezing` })
-
-  if (weather.pressure < 970)  reasons.push({ icon: '📉', text: `Pressure: ${weather.pressure} hPa — extreme low (<970 hPa); cyclonic system likely` })
-  else if (weather.pressure < 990) reasons.push({ icon: '📉', text: `Pressure: ${weather.pressure} hPa — very low (<990 hPa); active weather system` })
-  else if (weather.pressure < 1005) reasons.push({ icon: '📉', text: `Pressure: ${weather.pressure} hPa — below normal (<1005 hPa)` })
-
-  if (weather.humidity > 90 && weather.temp > 35)
-    reasons.push({ icon: '🥵', text: `Heat stress: ${weather.humidity}% humidity at ${weather.temp}°C — dangerous heat index combination` })
-
-  if (reasons.length === 0)
-    reasons.push({ icon: '✅', text: 'All five parameters are within normal operating ranges' })
-
-  return reasons
+function alertReasons(w) {
+  const { temp, wind, rain, humidity, pressure } = w
+  const hi = heatIndex(temp, humidity)
+  const r = []
+  if      (rain > 200) r.push({ ico:'🌧️', txt:`Rainfall: ${rain}mm — IMD Extremely Heavy threshold (>204mm)` })
+  else if (rain > 115) r.push({ ico:'🌧️', txt:`Rainfall: ${rain}mm — Very Heavy threshold (>115mm)` })
+  else if (rain > 64)  r.push({ ico:'🌧️', txt:`Rainfall: ${rain}mm — Heavy threshold (>64mm)` })
+  if      (wind > 117) r.push({ ico:'🌪️', txt:`Wind: ${wind}km/h — hurricane-force (>117km/h)` })
+  else if (wind > 88)  r.push({ ico:'💨', txt:`Wind: ${wind}km/h — storm-force (>88km/h)` })
+  else if (wind > 61)  r.push({ ico:'💨', txt:`Wind: ${wind}km/h — gale-force (>61km/h)` })
+  if      (temp > 47)  r.push({ ico:'🔥', txt:`Temperature: ${temp}°C — IMD Severe Heat Wave (>47°C)` })
+  else if (temp > 40)  r.push({ ico:'☀️', txt:`Temperature: ${temp}°C — IMD Heat Wave (>40°C)${hi?`; feels like ${hi}°C`:''}` })
+  else if (temp < -10) r.push({ ico:'🥶', txt:`Temperature: ${temp}°C — extreme cold (<−10°C)` })
+  else if (temp < 0)   r.push({ ico:'❄️', txt:`Temperature: ${temp}°C — below freezing` })
+  if      (pressure < 970)  r.push({ ico:'📉', txt:`Pressure: ${pressure}hPa — extreme low; cyclonic system likely` })
+  else if (pressure < 990)  r.push({ ico:'📉', txt:`Pressure: ${pressure}hPa — very low; active weather system` })
+  else if (pressure < 1005) r.push({ ico:'📉', txt:`Pressure: ${pressure}hPa — below normal` })
+  if (humidity > 90 && temp > 35) r.push({ ico:'🥵', txt:`Heat stress: ${humidity}% humidity at ${temp}°C — dangerous combination` })
+  if (!r.length) r.push({ ico:'✅', txt:'All five parameters within normal operating ranges' })
+  return r
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// MAIN COMPONENT
-// ─────────────────────────────────────────────────────────────────────────────
+// ─── SVG Chart helpers ────────────────────────────────────────────────────────
+
+function smoothPath(vals, W, H, maxV, minV=0) {
+  if (!vals.length) return { line:'', fill:'', xs:[], ys:[] }
+  const range = (maxV - minV) || 1
+  const pad = 14
+  const xs = vals.map((_,i) => (i / (vals.length-1)) * W)
+  const ys = vals.map(v => H - pad - ((v - minV) / range) * (H - pad*2))
+  let line = `M ${xs[0].toFixed(2)} ${ys[0].toFixed(2)}`
+  for (let i=1; i<xs.length; i++) {
+    const cx = ((xs[i-1]+xs[i])/2).toFixed(2)
+    line += ` C ${cx} ${ys[i-1].toFixed(2)} ${cx} ${ys[i].toFixed(2)} ${xs[i].toFixed(2)} ${ys[i].toFixed(2)}`
+  }
+  const fill = `${line} L ${xs[xs.length-1].toFixed(2)} ${H} L ${xs[0].toFixed(2)} ${H} Z`
+  return { line, fill, xs, ys }
+}
+
+// ─── WindChart ────────────────────────────────────────────────────────────────
+
+function WindChart({ data }) {
+  if (!data?.length) return <div className="chart-empty">No forecast data available</div>
+  const W=500, H=130
+  const speeds = data.map(d => d.wind ?? 0)
+  const maxS   = Math.max(...speeds, 20)
+  const { line, fill, xs, ys } = smoothPath(speeds, W, H, maxS)
+  const clr    = maxS>88 ? '#f87171' : maxS>61 ? '#fb923c' : maxS>40 ? '#fbbf24' : '#22d3ee'
+  const step   = Math.max(1, Math.floor(data.length/7))
+  const pts    = data.map((d,i) => ({...d, x:xs[i], y:ys[i], i})).filter((_,i) => i%step===0)
+
+  return (
+    <div className="chart-wrap">
+      <svg viewBox={`0 0 ${W} ${H+26}`} style={{width:'100%',display:'block'}}>
+        <defs>
+          <linearGradient id="wg" x1="0" x2="0" y1="0" y2="1">
+            <stop offset="0%"   stopColor={clr} stopOpacity="0.38"/>
+            <stop offset="100%" stopColor={clr} stopOpacity="0.02"/>
+          </linearGradient>
+        </defs>
+
+        {/* Background grid lines */}
+        {[0.33, 0.66, 1].map(p => (
+          <line key={p}
+            x1="0" y1={(H - 14 - p*(H-28)).toFixed(1)}
+            x2={W} y2={(H - 14 - p*(H-28)).toFixed(1)}
+            stroke="rgba(255,255,255,0.05)" strokeWidth="1"
+          />
+        ))}
+
+        {/* IMD threshold lines */}
+        {[
+          { v:40, c:'rgba(251,191,36,0.5)'  },
+          { v:61, c:'rgba(251,146,60,0.5)'  },
+          { v:88, c:'rgba(248,113,113,0.5)' },
+        ].map(({v,c}) =>
+          maxS > v && (
+            <line key={v}
+              x1="0" y1={(H - 14 - (v/maxS)*(H-28)).toFixed(1)}
+              x2={W} y2={(H - 14 - (v/maxS)*(H-28)).toFixed(1)}
+              stroke={c} strokeWidth="0.8" strokeDasharray="3,4"
+            />
+          )
+        )}
+
+        {/* Area fill + line */}
+        <path d={fill} fill="url(#wg)"/>
+        <path d={line} fill="none" stroke={clr} strokeWidth="2.5" strokeLinejoin="round"/>
+
+        {/* Direction arrows at sampled points */}
+        {pts.map((p,i) => (
+          <g key={i} transform={`translate(${p.x.toFixed(1)},${(p.y - 15).toFixed(1)})`}>
+            <g transform={`rotate(${p.windDir ?? 0})`}>
+              <path d="M0,-6 L3.5,5 L0,2.5 L-3.5,5Z" fill={clr} opacity="0.85"/>
+            </g>
+          </g>
+        ))}
+
+        {/* Glow dot at current value */}
+        <circle cx={xs[0].toFixed(1)} cy={ys[0].toFixed(1)} r="6" fill={clr} opacity="0.25"/>
+        <circle cx={xs[0].toFixed(1)} cy={ys[0].toFixed(1)} r="4" fill={clr}/>
+
+        {/* Speed labels above arrows */}
+        {pts.map((p,i) => (
+          <text key={i}
+            x={p.x.toFixed(1)} y={(p.y - 20).toFixed(1)}
+            textAnchor="middle" fontSize="9" fill={clr} fontWeight="600"
+          >
+            {Math.round(p.wind ?? 0)}
+          </text>
+        ))}
+
+        {/* Time labels at bottom */}
+        {pts.map((p,i) => (
+          <text key={i}
+            x={p.x.toFixed(1)} y={H+18}
+            textAnchor="middle" fontSize="9" fill="rgba(127,181,200,0.6)"
+          >
+            {new Date(p.time).getHours().toString().padStart(2,'0')}:00
+          </text>
+        ))}
+      </svg>
+
+      <div className="chart-legend">
+        {maxS > 40 && <span className="legend-item" style={{color:'#fbbf24'}}>── Strong (40)</span>}
+        {maxS > 61 && <span className="legend-item" style={{color:'#fb923c'}}>── Gale (61)</span>}
+        {maxS > 88 && <span className="legend-item" style={{color:'#f87171'}}>── Storm (88)</span>}
+        <span className="legend-item" style={{color:'rgba(127,181,200,0.5)'}}>▲ Wind direction (km/h)</span>
+      </div>
+    </div>
+  )
+}
+
+// ─── PressureChart ────────────────────────────────────────────────────────────
+
+function PressureChart({ data }) {
+  if (!data?.length) return <div className="chart-empty">No forecast data available</div>
+  const W=500, H=100
+  const ps   = data.map(d => d.pressure ?? 1013)
+  const minP = Math.min(...ps) - 3
+  const maxP = Math.max(...ps) + 3
+  const { line, fill, xs, ys } = smoothPath(ps, W, H, maxP, minP)
+  const drop = ps[0] - ps[ps.length-1]
+  const clr  = drop>15 ? '#f87171' : drop>8 ? '#fb923c' : drop>3 ? '#fbbf24' : '#818cf8'
+  const step = Math.max(1, Math.floor(data.length/7))
+  const labels = data.map((d,i) => ({...d, x:xs[i], i})).filter((_,i) => i%step===0)
+  const range  = (maxP - minP) || 1
+
+  return (
+    <div className="chart-wrap">
+      <svg viewBox={`0 0 ${W} ${H+24}`} style={{width:'100%',display:'block'}}>
+        <defs>
+          <linearGradient id="pg" x1="0" x2="0" y1="0" y2="1">
+            <stop offset="0%"   stopColor={clr} stopOpacity="0.32"/>
+            <stop offset="100%" stopColor={clr} stopOpacity="0.02"/>
+          </linearGradient>
+        </defs>
+
+        {/* 1013 hPa normal reference line */}
+        {minP < 1013 && maxP > 1013 && (
+          <>
+            <line
+              x1="0" y1={(H - 14 - ((1013-minP)/range)*(H-28)).toFixed(1)}
+              x2={W} y2={(H - 14 - ((1013-minP)/range)*(H-28)).toFixed(1)}
+              stroke="rgba(127,181,200,0.2)" strokeWidth="1" strokeDasharray="5,4"
+            />
+            <text
+              x={W-4} y={(H - 18 - ((1013-minP)/range)*(H-28)).toFixed(1)}
+              textAnchor="end" fontSize="8" fill="rgba(127,181,200,0.4)"
+            >
+              1013hPa
+            </text>
+          </>
+        )}
+
+        {/* 990 hPa danger threshold */}
+        {minP < 990 && maxP > 990 && (
+          <line
+            x1="0" y1={(H - 14 - ((990-minP)/range)*(H-28)).toFixed(1)}
+            x2={W} y2={(H - 14 - ((990-minP)/range)*(H-28)).toFixed(1)}
+            stroke="rgba(251,146,60,0.45)" strokeWidth="0.8" strokeDasharray="3,4"
+          />
+        )}
+
+        {/* Area fill + line */}
+        <path d={fill} fill="url(#pg)"/>
+        <path d={line} fill="none" stroke={clr} strokeWidth="2.2" strokeLinejoin="round"/>
+
+        {/* Glow dot at current */}
+        <circle cx={xs[0].toFixed(1)} cy={ys[0].toFixed(1)} r="4"  fill={clr}/>
+        <circle cx={xs[0].toFixed(1)} cy={ys[0].toFixed(1)} r="8"  fill={clr} opacity="0.2"/>
+
+        {/* Time labels */}
+        {labels.map((l,i) => (
+          <text key={i}
+            x={l.x.toFixed(1)} y={H+16}
+            textAnchor="middle" fontSize="9" fill="rgba(127,181,200,0.6)"
+          >
+            {i===0 ? 'Now' : `+${l.i}h`}
+          </text>
+        ))}
+      </svg>
+
+      <div className="chart-legend">
+        <span className="legend-item" style={{color:clr}}>
+          {drop>8 ? '⚠️ Rapid fall' : drop>3 ? '📉 Falling' : drop<-3 ? '📈 Rising' : '→ Stable'}
+          {': '}{Math.abs(drop).toFixed(1)} hPa over {data.length}h
+        </span>
+        {minP < 990 && (
+          <span className="legend-item" style={{color:'#fb923c'}}>── 990 hPa danger threshold</span>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ─── Main Component ───────────────────────────────────────────────────────────
 
 export default function WeatherDashboard() {
-  const [city, setCity]             = useState('')
-  const [weather, setWeather]       = useState(null)
-  const [severity, setSeverity]     = useState('')
-  const [reason, setReason]         = useState('')
+  const [city,         setCity]         = useState('')
+  const [weather,      setWeather]      = useState(null)
+  const [severity,     setSeverity]     = useState('')
+  const [reason,       setReason]       = useState('')
   const [disasterType, setDisasterType] = useState('')
-  const [cityName, setCityName]     = useState('')
-  const [loading, setLoading]       = useState(false)
-  const [error, setError]           = useState('')
+  const [cityName,     setCityName]     = useState('')
+  const [loading,      setLoading]      = useState(false)
+  const [error,        setError]        = useState('')
 
-  const [watchlist, setWatchlist]   = useState([])
-  const [monitorData, setMonitorData] = useState({})
+  const [forecastHrs, setForecastHrs]  = useState([])
+  const [dailyFc,     setDailyFc]      = useState([])
+  const [stormAlerts, setStormAlerts]  = useState([])
+  const [namedStorms, setNamedStorms]  = useState([])
 
-  const [globalAlerts, setGlobalAlerts]   = useState([])
-  const [scanLoading, setScanLoading]     = useState(false)
-  const [lastScanTime, setLastScanTime]   = useState(null)
+  const [watchlist,    setWatchlist]   = useState([])
+  const [monData,      setMonData]     = useState({})
+  const [globalAlerts, setGlobalAlerts]= useState([])
+  const [scanLoading,  setScanLoading] = useState(false)
+  const [lastScan,     setLastScan]    = useState(null)
 
-  // ─── Global Alert Scanner ──────────────────────────────────────────────────
-  const runGlobalScan = useCallback(async () => {
+  // ─── Global scan ─────────────────────────────────────────────────────────────
+  const runScan = useCallback(async () => {
     setScanLoading(true)
     const alerts = []
-
-    for (const loc of GLOBAL_SCAN_CITIES) {
+    for (const loc of CITIES) {
       try {
-        const weatherRes = await fetch(
+        const wRes = await fetch(
           `https://api.open-meteo.com/v1/forecast?latitude=${loc.lat}&longitude=${loc.lon}` +
           `&current=temperature_2m,wind_speed_10m,relative_humidity_2m,surface_pressure,rain`
         )
-        const weatherData = await weatherRes.json()
-        const current = weatherData.current
-        if (!current) continue
-
-        const temp     = current.temperature_2m       ?? 0
-        const wind     = current.wind_speed_10m       ?? 0
-        const rain     = current.rain                 ?? 0
-        const humidity = current.relative_humidity_2m ?? 50
-        const pressure = current.surface_pressure     ?? 1013
-
-        const classifyRes  = await fetch(
+        const wd = await wRes.json()
+        const c  = wd.current
+        if (!c) continue
+        const temp=c.temperature_2m??0, wind=c.wind_speed_10m??0, rain=c.rain??0
+        const humidity=c.relative_humidity_2m??50, pressure=c.surface_pressure??1013
+        const cr = await fetch(
           `${BACKEND_URL}/classify?temp=${temp}&rain=${rain}&wind=${wind}&humidity=${humidity}&pressure=${pressure}`
         )
-        const classifyData = await classifyRes.json()
-        const sev   = classifyData.severity    || 'Low'
-        const dtype = classifyData.disasterType || 'No Threat'
-
-        if (sev !== 'Low') {
-          alerts.push({ name: loc.name, country: loc.country, temp, wind, rain, humidity, pressure, severity: sev, disasterType: dtype })
-        }
-      } catch (e) {
-        console.error(`Global scan failed for ${loc.name}:`, e)
-      }
+        const cd  = await cr.json()
+        const sev = cd.severity    || 'Low'
+        const dtype = cd.disasterType || 'No Threat'
+        if (sev !== 'Low') alerts.push({ name:loc.name, country:loc.country, temp, wind, rain, humidity, pressure, severity:sev, disasterType:dtype })
+      } catch(_) {}
     }
-
-    const order = { Extreme: 0, High: 1, Moderate: 2 }
-    alerts.sort((a, b) => (order[a.severity] ?? 3) - (order[b.severity] ?? 3))
+    const ord = { Extreme:0, High:1, Moderate:2 }
+    alerts.sort((a,b) => (ord[a.severity]??3) - (ord[b.severity]??3))
     setGlobalAlerts(alerts)
-    setLastScanTime(new Date())
+    setLastScan(new Date())
     setScanLoading(false)
   }, [])
 
   useEffect(() => {
-    runGlobalScan()
-    const interval = setInterval(runGlobalScan, 10 * 60 * 1000)
-    return () => clearInterval(interval)
-  }, [runGlobalScan])
+    runScan()
+    // NOAA NHC named storms — free public endpoint, no API key needed
+    // Only returns data during Atlantic/Pacific hurricane season when storms are active
+    fetch('https://www.nhc.noaa.gov/CurrentStorms.json')
+      .then(r => r.json())
+      .then(d => { if (d?.activeStorms?.length) setNamedStorms(d.activeStorms) })
+      .catch(() => {}) // silently ignore CORS or off-season
 
-  // ─── Watchlist ─────────────────────────────────────────────────────────────
-  const addToWatchlist = () => {
-    if (cityName && !watchlist.includes(cityName)) {
-      setWatchlist(prev => [...prev, cityName])
-      if (weather && severity) {
-        setMonitorData(prev => ({
-          ...prev,
-          [cityName]: {
-            temp: weather.temp, wind: weather.wind,
-            rain: weather.rain, humidity: weather.humidity,
-            pressure: weather.pressure, severity, disasterType,
-            country: cityName.split(', ')[1] || '',
-            resolvedName: cityName.split(', ')[0],
-          }
-        }))
-      } else {
-        fetchMonitorForCity(cityName)
-      }
+    const iv = setInterval(runScan, 10 * 60 * 1000)
+    return () => clearInterval(iv)
+  }, [runScan])
+
+  // ─── Watchlist helpers ────────────────────────────────────────────────────────
+  const addWatch = () => {
+    if (!cityName || watchlist.includes(cityName)) return
+    setWatchlist(p => [...p, cityName])
+    if (weather && severity) {
+      setMonData(p => ({
+        ...p,
+        [cityName]: {
+          temp: weather.temp, wind: weather.wind, rain: weather.rain,
+          humidity: weather.humidity, pressure: weather.pressure,
+          severity, disasterType,
+          country:      cityName.split(', ')[1] || '',
+          resolvedName: cityName.split(', ')[0],
+        }
+      }))
+    } else {
+      fetchMonCity(cityName)
     }
   }
 
-  const removeFromWatchlist = (e, name) => {
+  const removeWatch = (e, name) => {
     e.stopPropagation()
-    setWatchlist(prev => prev.filter(c => c !== name))
-    setMonitorData(prev => { const copy = { ...prev }; delete copy[name]; return copy })
+    setWatchlist(p => p.filter(c => c !== name))
+    setMonData(p => { const c = {...p}; delete c[name]; return c })
   }
 
-  async function fetchMonitorForCity(name) {
+  async function fetchMonCity(name) {
     try {
-      const geoRes  = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(name)}&count=1`)
-      const geoData = await geoRes.json()
-      if (geoData.results?.[0]) {
-        const { latitude: lat, longitude: lon, country } = geoData.results[0]
-        const wRes  = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,wind_speed_10m,relative_humidity_2m,surface_pressure,rain`)
-        const wData = await wRes.json()
-        const c = wData.current
-        if (c) {
-          const temp = c.temperature_2m ?? 0, wind = c.wind_speed_10m ?? 0
-          const rain = c.rain ?? 0, humidity = c.relative_humidity_2m ?? 50, pressure = c.surface_pressure ?? 1013
-          const cRes  = await fetch(`${BACKEND_URL}/classify?temp=${temp}&rain=${rain}&wind=${wind}&humidity=${humidity}&pressure=${pressure}`)
-          const cData = await cRes.json()
-          setMonitorData(prev => ({
-            ...prev,
+      const gr = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(name)}&count=1`)
+      const gd = await gr.json()
+      if (gd.results?.[0]) {
+        const { latitude:lat, longitude:lon, country } = gd.results[0]
+        const wr = await fetch(
+          `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}` +
+          `&current=temperature_2m,wind_speed_10m,relative_humidity_2m,surface_pressure,rain`
+        )
+        const wd  = await wr.json()
+        const cur = wd.current
+        if (cur) {
+          const temp=cur.temperature_2m??0, wind=cur.wind_speed_10m??0, rain=cur.rain??0
+          const humidity=cur.relative_humidity_2m??50, pressure=cur.surface_pressure??1013
+          const cr = await fetch(
+            `${BACKEND_URL}/classify?temp=${temp}&rain=${rain}&wind=${wind}&humidity=${humidity}&pressure=${pressure}`
+          )
+          const cd = await cr.json()
+          setMonData(p => ({
+            ...p,
             [name]: {
               temp, wind, rain, humidity, pressure,
-              severity:    cData.severity    || 'Low',
-              disasterType: cData.disasterType || 'No Threat',
-              country: country || '',
-              resolvedName: geoData.results[0].name,
+              severity:     cd.severity     || 'Low',
+              disasterType: cd.disasterType || 'No Threat',
+              country:      country         || '',
+              resolvedName: gd.results[0].name,
             }
           }))
         }
       }
-    } catch (e) { console.error(`Monitor fetch failed for ${name}:`, e) }
+    } catch(_) {}
   }
 
-  // ─── Search ────────────────────────────────────────────────────────────────
+  // ─── Main search & fetch ──────────────────────────────────────────────────────
   async function fetchWeather() {
-    const trimmed = city.trim()
-    if (!trimmed) { setError('Please enter a city name.'); return }
+    const q = city.trim()
+    if (!q) { setError('Please enter a city name.'); return }
 
     setLoading(true); setError('')
     setWeather(null); setSeverity(''); setReason(''); setDisasterType('')
+    setForecastHrs([]); setDailyFc([]); setStormAlerts([])
 
     try {
-      const geoRes  = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(trimmed)}&count=1`)
-      if (!geoRes.ok) throw new Error('Failed to reach the geocoding service.')
-      const geoData = await geoRes.json()
-      if (!geoData.results?.length) throw new Error(`City "${trimmed}" not found. Please check the spelling.`)
+      const gr = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(q)}&count=1`)
+      if (!gr.ok) throw new Error('Geocoding service unavailable.')
+      const gd = await gr.json()
+      if (!gd.results?.length) throw new Error(`City "${q}" not found. Please check the spelling.`)
 
-      const { latitude: lat, longitude: lon, name: resolvedName, country } = geoData.results[0]
-      setCityName(`${resolvedName}, ${country || ''}`.trim())
+      const { latitude:lat, longitude:lon, name:rn, country } = gd.results[0]
+      const cn = `${rn}, ${country || ''}`.trim()
+      setCityName(cn)
 
-      const wRes  = await fetch(
+      // One call: 30-day historical + 7-day forecast + wind direction
+      const wr = await fetch(
         `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}` +
-        `&current=temperature_2m,wind_speed_10m,relative_humidity_2m,surface_pressure,rain` +
-        `&past_days=30&hourly=temperature_2m,wind_speed_10m,relative_humidity_2m,surface_pressure,rain`
+        `&current=temperature_2m,wind_speed_10m,wind_direction_10m,relative_humidity_2m,surface_pressure,rain` +
+        `&hourly=temperature_2m,wind_speed_10m,wind_direction_10m,relative_humidity_2m,surface_pressure,rain` +
+        `&past_days=30&forecast_days=7`
       )
-      if (!wRes.ok) throw new Error('Failed to fetch weather data.')
-      const wData = await wRes.json()
+      if (!wr.ok) throw new Error('Weather data unavailable for this location.')
+      const wd  = await wr.json()
+      const cur = wd.current
+      if (!cur) throw new Error('Current conditions unavailable.')
 
-      const current = wData.current
-      if (!current) throw new Error('Weather data unavailable for this location.')
+      const temp     = cur.temperature_2m       ?? 0
+      const wind     = cur.wind_speed_10m       ?? 0
+      const windDir  = cur.wind_direction_10m   ?? 0
+      const humidity = cur.relative_humidity_2m ?? 50
+      const pressure = cur.surface_pressure     ?? 1013
+      const rain     = cur.rain                 ?? 0
 
-      const temp     = current.temperature_2m       ?? 0
-      const wind     = current.wind_speed_10m       ?? 0
-      const humidity = current.relative_humidity_2m ?? 50
-      const pressure = current.surface_pressure     ?? 1013
-      const rain     = current.rain                 ?? 0
-
-      let avgTemp = 0, avgWind = 0, avgHumidity = 50, avgPressure = 1013, avgRain = 0
-      if (wData.hourly?.time) {
-        const h = wData.hourly
-        const n = h.time.length || 1
-        const sum = arr => (arr || []).reduce((a, b) => a + (b || 0), 0)
-        avgTemp     = parseFloat((sum(h.temperature_2m)        / n).toFixed(1))
-        avgWind     = parseFloat((sum(h.wind_speed_10m)        / n).toFixed(1))
-        avgHumidity = Math.round(sum(h.relative_humidity_2m)   / n)
-        avgPressure = Math.round(sum(h.surface_pressure)       / n)
-        avgRain     = parseFloat((sum(h.rain) / (n / 24 || 1)).toFixed(1))
+      // Compute 30-day averages from past hourly data
+      let avgTemp=0, avgWind=0, avgHumidity=50, avgPressure=1013, avgRain=0
+      if (wd.hourly?.time) {
+        const h   = wd.hourly
+        const now = new Date()
+        const pastEnd = h.time.findIndex(t => new Date(t) >= now)
+        const end = pastEnd > 0 ? pastEnd : h.time.length
+        const sl  = k => (h[k] || []).slice(0, end)
+        const sum = a => a.reduce((x,y) => x + (y||0), 0)
+        if (end > 0) {
+          avgTemp     = parseFloat((sum(sl('temperature_2m'))       / end).toFixed(1))
+          avgWind     = parseFloat((sum(sl('wind_speed_10m'))       / end).toFixed(1))
+          avgHumidity = Math.round(sum(sl('relative_humidity_2m'))  / end)
+          avgPressure = Math.round(sum(sl('surface_pressure'))      / end)
+          avgRain     = parseFloat((sum(sl('rain')) / (end/24 || 1)).toFixed(1))
+        }
       }
 
-      setWeather({ temp, wind, humidity, pressure, rain, avgTemp, avgWind, avgHumidity, avgPressure, avgRain })
+      setWeather({ temp, wind, windDir, humidity, pressure, rain, avgTemp, avgWind, avgHumidity, avgPressure, avgRain })
 
-      const cRes  = await fetch(
-        `${BACKEND_URL}/classifyWithHistory?temp=${temp}&rain=${rain}&wind=${wind}&humidity=${humidity}&pressure=${pressure}` +
+      // Build future hourly slice for charts (next 48h)
+      const now = new Date()
+      const future = (wd.hourly?.time || [])
+        .map((t,i) => ({
+          time:     t,
+          wind:     wd.hourly.wind_speed_10m[i]       ?? 0,
+          windDir:  wd.hourly.wind_direction_10m[i]   ?? 0,
+          pressure: wd.hourly.surface_pressure[i]     ?? 1013,
+          rain:     wd.hourly.rain[i]                 ?? 0,
+          temp:     wd.hourly.temperature_2m[i]       ?? 0,
+          humidity: wd.hourly.relative_humidity_2m[i] ?? 50,
+        }))
+        .filter(h => new Date(h.time) >= now)
+        .slice(0, 48)
+
+      setForecastHrs(future)
+      setStormAlerts(stormApproach(future))
+
+      // Build 7-day daily summary for threat forecast strip
+      const days = {}
+      future.forEach(h => {
+        const k = new Date(h.time).toLocaleDateString('en-US', { weekday:'short', month:'short', day:'numeric' })
+        if (!days[k]) days[k] = []
+        days[k].push(h)
+      })
+      const daily = Object.entries(days).map(([date, hrs]) => {
+        const maxW = Math.max(...hrs.map(h => h.wind     ?? 0))
+        const maxR = Math.max(...hrs.map(h => h.rain     ?? 0))
+        const maxT = Math.max(...hrs.map(h => h.temp     ?? 0))
+        const minP = Math.min(...hrs.map(h => h.pressure ?? 9999))
+        const avgH = hrs.reduce((a,h) => a + (h.humidity ?? 50), 0) / hrs.length
+        const sev  = classifyFE({ wind:maxW, rain:maxR, temp:maxT, pressure:minP, humidity:avgH })
+        const dt   = disasterFE({ wind:maxW, rain:maxR, temp:maxT, pressure:minP, humidity:avgH })
+        return { date, maxW, maxR, maxT, minP, severity:sev, disasterType:dt }
+      })
+      setDailyFc(daily)
+
+      // Backend classification with 30-day historical context
+      const cr = await fetch(
+        `${BACKEND_URL}/classifyWithHistory` +
+        `?temp=${temp}&rain=${rain}&wind=${wind}&humidity=${humidity}&pressure=${pressure}` +
         `&avg_temp=${avgTemp}&avg_rain=${avgRain}&avg_wind=${avgWind}&avg_humidity=${avgHumidity}&avg_pressure=${avgPressure}`
       )
-      if (!cRes.ok) throw new Error('Classification service unavailable. Ensure the backend is running.')
-      const cData = await cRes.json()
-      setSeverity(cData.severity    || 'Unknown')
-      setReason(cData.reason        || '')
-      setDisasterType(cData.disasterType || 'No Threat')
+      if (!cr.ok) throw new Error('Classification service unavailable. Ensure the Haskell backend is running.')
+      const cd = await cr.json()
+      setSeverity(cd.severity     || 'Unknown')
+      setReason(cd.reason         || '')
+      setDisasterType(cd.disasterType || 'No Threat')
 
-    } catch (err) {
+    } catch(err) {
       setError(err.message || 'An unexpected error occurred.')
     } finally {
       setLoading(false)
     }
   }
 
-  function handleKeyDown(e) { if (e.key === 'Enter') fetchWeather() }
+  const onKey = e => { if (e.key === 'Enter') fetchWeather() }
 
-  const sevConfig    = SEVERITY_CONFIG[severity]  || { emoji: '❓', className: '' }
-  const dConfig      = DISASTER_CONFIG[disasterType] || DISASTER_CONFIG['No Threat']
-  const showDetails  = weather && !loading && severity
+  // ─── Derived values ───────────────────────────────────────────────────────────
+  const sc    = SEV[severity]     || { emoji:'❓', cls:'',       color:'#3d6275' }
+  const dc    = DIS[disasterType] || DIS['No Threat']
+  const hasR  = weather && !loading && severity
+  const cp    = weather ? compound(weather) : null
+  const hi    = weather ? heatIndex(weather.temp, weather.humidity) : null
+  const cpClr = cp ? (cp.pct>=80?'#f87171' : cp.pct>=55?'#fb923c' : cp.pct>=30?'#fbbf24' : '#4ade80') : '#4ade80'
+  const lvClr = { extreme:'#f87171', high:'#fb923c', moderate:'#fbbf24', low:'#4ade80' }
 
-  const compound     = weather ? getCompoundScore(weather) : null
-  const assessment   = weather ? generateDynamicAssessment(weather, severity, disasterType) : ''
-  const advisories   = weather ? generateDynamicAdvisories(weather, severity, disasterType) : []
-  const factors      = weather ? getAlertReasons(weather) : []
+  // Thin chart data to ~24 points for readability
+  const chartData = forecastHrs.filter((_,i) => i % 2 === 0)
 
-  const compoundBarColor =
-    compound?.pct >= 80 ? '#ef4444' :
-    compound?.pct >= 55 ? '#f97316' :
-    compound?.pct >= 30 ? '#f59e0b' : '#22c55e'
-
-  const levelColors = { extreme: '#ef4444', high: '#f97316', moderate: '#f59e0b', low: '#22c55e' }
-
-  // ─── Render ────────────────────────────────────────────────────────────────
+  // ─── Render ───────────────────────────────────────────────────────────────────
   return (
-    <div className={`layout-wrapper ${showDetails ? 'has-details' : ''}`}>
+    <div>
 
-      {/* ── LEFT: Weather Dashboard ─────────────────────────── */}
-      <div className="dashboard-card">
-        <div className="dashboard-header">
-          <span className="dashboard-icon">🌦️</span>
-          <h1 className="dashboard-title">Meteorological Alert System</h1>
-          <p className="dashboard-subtitle">Real-time severity classification · IMD framework</p>
+      {/* ══════════════════════════════════════════════════════════ HERO */}
+      <section className="hero">
+        <div className="hero-eyebrow">
+          <span className="eyebrow-dot"></span>
+          IMD Classification · Compound Event Analysis · 0 API Keys Required
         </div>
 
-        <div className="input-group">
-          <input
-            className="city-input"
-            type="text"
-            placeholder="Enter city name..."
-            value={city}
-            onChange={e => setCity(e.target.value)}
-            onKeyDown={handleKeyDown}
-            disabled={loading}
-          />
-          <button className="fetch-btn" onClick={fetchWeather} disabled={loading}>
-            {loading ? '...' : 'Analyze'}
-          </button>
+        <h1 className="hero-title">
+          Real-Time<br/>
+          <span className="hero-title-accent">Meteorological</span><br/>
+          Alert System
+        </h1>
+
+        <p className="hero-sub">
+          Automated severity classification using compound event analysis
+          for effective disaster risk reduction. Wind behaviour,
+          storm approach detection, and 7-day threat forecasting — all free.
+        </p>
+
+        <div className="hero-search">
+          <div className="search-wrap">
+            <span className="search-ico">🔍</span>
+            <input
+              className="search-input"
+              type="text"
+              placeholder="Search any city worldwide..."
+              value={city}
+              onChange={e => setCity(e.target.value)}
+              onKeyDown={onKey}
+              disabled={loading}
+            />
+            <button className="search-btn" onClick={fetchWeather} disabled={loading}>
+              {loading ? <span className="btn-spin"></span> : 'Analyze'}
+            </button>
+          </div>
         </div>
 
+        <div className="hero-stats">
+          {[
+            { n:'30',    l:'Cities Monitored'   },
+            { n:'5',     l:'Parameters Analysed' },
+            { n:'7-Day', l:'Threat Forecast'     },
+            { n:'Free',  l:'No API Key Needed'   },
+          ].map((s,i) => (
+            <div key={s.n} style={{display:'flex',alignItems:'center',gap:'2rem'}}>
+              {i > 0 && <div className="hstat-div"></div>}
+              <div className="hstat">
+                <div className="hstat-n">{s.n}</div>
+                <div className="hstat-l">{s.l}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div className="scroll-hint">
+          <span>▼</span>
+          <span>Scroll down</span>
+        </div>
+      </section>
+
+      {/* ══════════════════════════════════════════════════════════ MAIN */}
+      <div className="main">
+
+        {/* Error */}
         {error && (
-          <div className="error-message" role="alert">
-            <span className="error-icon">⚠️</span><span>{error}</span>
+          <div className="err-banner">
+            <span>⚠️</span><span>{error}</span>
           </div>
         )}
 
+        {/* Loading */}
         {loading && (
-          <div className="loading-container">
-            <div className="spinner"></div>
-            <span className="loading-text">Fetching weather data...</span>
+          <div className="loading-center">
+            <div className="spinner-lg"></div>
+            <span className="loading-lbl">Fetching data & running IMD classification...</span>
           </div>
         )}
 
-        {weather && !loading && (
-          <div className="weather-results">
-            {cityName && (
-              <div className="city-display">📍 <span className="city-name">{cityName}</span></div>
+        {/* ══ RESULTS ══════════════════════════════════════════════════ */}
+        {hasR && (
+          <>
+            {/* Row 1 — Current Conditions + Severity */}
+            <div className="results-row">
+
+              {/* LEFT — Current Conditions */}
+              <div className="card">
+                <div className="cond-titlerow">
+                  <div>
+                    <div className="card-title">📍 {cityName}</div>
+                    <div className="card-sub">Current conditions · IMD scale</div>
+                  </div>
+                  <button
+                    className="btn-watch"
+                    onClick={addWatch}
+                    disabled={watchlist.includes(cityName)}
+                  >
+                    {watchlist.includes(cityName) ? '✓ Watching' : '+ Watch'}
+                  </button>
+                </div>
+
+                {/* 4 stat cells */}
+                <div className="cond-grid">
+                  {[
+                    { ico:'🌡️', val:`${weather.temp}°C`,   lbl:'Temperature',                      t:trend(weather.temp,    weather.avgTemp),           avg:`${weather.avgTemp}°C`     },
+                    { ico:'💨', val:`${weather.wind} km/h`, lbl:`Wind · ${compass(weather.windDir)}`, t:trend(weather.wind,    weather.avgWind),           avg:`${weather.avgWind}km/h`   },
+                    { ico:'💧', val:`${weather.humidity}%`, lbl:'Humidity',                          t:trend(weather.humidity,weather.avgHumidity),       avg:`${weather.avgHumidity}%`  },
+                    { ico:'🌧️', val:`${weather.rain} mm`,  lbl:'Rainfall',                          t:trend(weather.rain,    weather.avgRain),           avg:`${weather.avgRain}mm`     },
+                  ].map(s => (
+                    <div className="cond-cell" key={s.lbl}>
+                      <span className="cond-ico">{s.ico}</span>
+                      <div className="cond-val">{s.val}</div>
+                      <div className="cond-lbl">{s.lbl}</div>
+                      <div className="cond-trend" style={{color:s.t.color}}>{s.t.sym} {s.t.label}</div>
+                      <div className="cond-avg">30d avg: {s.avg}</div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Pressure full-width */}
+                <div className="pres-row">
+                  <div className="pres-left">
+                    <span style={{fontSize:'1.2rem'}}>📊</span>
+                    <div>
+                      <div className="pres-val">{weather.pressure} hPa</div>
+                      <div className="cond-lbl">Surface Pressure</div>
+                    </div>
+                  </div>
+                  <div>
+                    {(() => {
+                      const t = trend(weather.pressure, weather.avgPressure, true)
+                      return (
+                        <div style={{color:t.color, fontWeight:700, fontSize:'0.85rem', textAlign:'right'}}>
+                          {t.sym} {t.label} hPa vs 30d avg
+                        </div>
+                      )
+                    })()}
+                    {weather.pressure < 1005 && (
+                      <div className="pres-note" style={{
+                        color: weather.pressure<970?'#f87171':'#fb923c', textAlign:'right'
+                      }}>
+                        {weather.pressure < 970 ? '🔴 Extreme low — cyclonic risk'
+                          : weather.pressure < 990 ? '🟠 Very low — active system'
+                          : '🟡 Below normal'}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Heat index pill */}
+                {hi && (
+                  <div className="hi-pill">
+                    🌡️ Apparent temperature (heat index): <strong>{hi}°C</strong>
+                    {' '}— {hi - weather.temp >= 5 ? 'dangerously' : 'noticeably'} hotter than ambient
+                  </div>
+                )}
+              </div>
+
+              {/* RIGHT — Severity & Risk Fingerprint */}
+              <div className="card">
+                <div className="sev-head">
+                  <div className="sev-big-emoji">
+                    {disasterType && disasterType !== 'No Threat' ? dc.emoji : sc.emoji}
+                  </div>
+                  <div className="sev-badges">
+                    <span
+                      className="badge badge-anim"
+                      style={{
+                        background:`${sc.color}18`,
+                        color: sc.color,
+                        border:`1px solid ${sc.color}45`,
+                      }}
+                    >
+                      {sc.emoji} {severity} Alert
+                    </span>
+                    {disasterType && disasterType !== 'No Threat' && (
+                      <span
+                        className="badge badge-sm"
+                        style={{ background:dc.bg, color:dc.color, border:`1px solid ${dc.bdr}` }}
+                      >
+                        {dc.emoji} {disasterType}
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                <p className="sev-assess">{dynAssess(weather, severity, disasterType)}</p>
+
+                {reason && (
+                  <div className="ctx-box">
+                    <div className="ctx-lbl">30-day Historical Context</div>
+                    <p>{reason}</p>
+                  </div>
+                )}
+
+                {/* Risk Fingerprint */}
+                {cp && (
+                  <div className="compound-box">
+                    <div className="compound-hdr">
+                      <span className="compound-lbl">Risk Fingerprint</span>
+                      <span>
+                        <span className="compound-score-num" style={{color:cpClr}}>{cp.score}</span>
+                        <span className="compound-score-max">/11 · {cp.pct}%</span>
+                      </span>
+                    </div>
+                    <div className="compound-main-track">
+                      <div
+                        className="compound-main-fill"
+                        style={{
+                          width:`${cp.pct}%`,
+                          background:`linear-gradient(90deg,${cpClr}70,${cpClr})`,
+                        }}
+                      ></div>
+                    </div>
+                    <div className="compound-bars">
+                      {cp.bars.map(b => (
+                        <div className="cbar-row" key={b.l}>
+                          <span className="cbar-lbl">{b.l}</span>
+                          <div className="cbar-track">
+                            <div className="cbar-fill" style={{width:`${b.p}%`, background:lvClr[b.lv]}}></div>
+                          </div>
+                          <span className="cbar-val" style={{color:lvClr[b.lv]}}>{b.v}</span>
+                        </div>
+                      ))}
+                    </div>
+                    {cp.score >= 3 && (
+                      <p style={{marginTop:'0.7rem', fontSize:'0.76rem', color:'var(--muted)', lineHeight:1.5}}>
+                        ⚠️ {cp.score >= 6 ? 'Critical' : 'Multiple'} parameters elevated simultaneously —
+                        compound events carry disproportionately higher risk than any single factor in isolation.
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Row 2 — Incoming Threat Analysis (storm approach) */}
+            {stormAlerts.length > 0 && (
+              <div className="storm-section">
+                <h2 className="section-heading">
+                  <span className="pdot pdot-orange"></span>
+                  ⚡ Incoming Threat Analysis — Next 48 Hours
+                </h2>
+                <div className="storm-grid">
+                  {stormAlerts.map((a, i) => {
+                    const s2 = SEV[a.sev] || SEV['Moderate']
+                    return (
+                      <div
+                        key={i}
+                        className="storm-card"
+                        style={{borderLeftColor: s2.color}}
+                      >
+                        <div className="storm-card-top">
+                          <span className="storm-icon">{a.icon}</span>
+                          <span
+                            className="badge badge-sm"
+                            style={{
+                              background:`${s2.color}18`,
+                              color: s2.color,
+                              border:`1px solid ${s2.color}45`,
+                            }}
+                          >
+                            {a.sev}
+                          </span>
+                        </div>
+                        <p className="storm-msg">{a.msg}</p>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
             )}
 
-            {/* Stat Cards with trend indicators */}
-            <div className="weather-stats">
-              {[
-                { icon: '🌡️', value: `${weather.temp}°C`,      label: 'Temperature', trend: getTrend(weather.temp, weather.avgTemp, false),      avg: `${weather.avgTemp}°C`    },
-                { icon: '💨', value: `${weather.wind} km/h`,    label: 'Wind Speed',  trend: getTrend(weather.wind, weather.avgWind, false),      avg: `${weather.avgWind}km/h`  },
-                { icon: '💧', value: `${weather.humidity}%`,    label: 'Humidity',    trend: getTrend(weather.humidity, weather.avgHumidity, false), avg: `${weather.avgHumidity}%`  },
-                { icon: '🌧️', value: `${weather.rain} mm`,      label: 'Rainfall',    trend: getTrend(weather.rain, weather.avgRain, false),       avg: `${weather.avgRain}mm`    },
-              ].map(s => (
-                <div className="stat-card" key={s.label}>
-                  <span className="stat-icon">{s.icon}</span>
-                  <div className="stat-value">{s.value}</div>
-                  <div className="stat-label">{s.label}</div>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px', marginTop: '6px' }}>
-                    <span style={{ fontSize: '0.78rem', color: s.trend.color, fontWeight: 700 }}>
-                      {s.trend.symbol} {s.trend.label}
-                    </span>
+            {/* Row 3 — Wind + Pressure charts */}
+            {chartData.length > 0 && (
+              <div className="charts-row">
+                <div className="card">
+                  <div className="chart-hdr">
+                    <div className="chart-title">💨 Wind Behaviour — Next 48h</div>
+                    <div className="chart-meta">
+                      Now <strong>{weather.wind} km/h</strong>
+                      {' · '}Dir <strong>{compass(weather.windDir)}</strong>
+                      {' · '}Peak <strong>{Math.max(...forecastHrs.map(h => h.wind||0)).toFixed(0)} km/h</strong>
+                    </div>
                   </div>
-                  <div style={{ fontSize: '0.72rem', color: 'var(--color-text-dim)', marginTop: '2px' }}>
-                    30d avg: {s.avg}
+                  <WindChart data={chartData}/>
+                </div>
+
+                <div className="card">
+                  <div className="chart-hdr">
+                    <div className="chart-title">📊 Pressure Trend — Next 48h</div>
+                    <div className="chart-meta">
+                      Now <strong>{weather.pressure} hPa</strong>
+                      {' · '}Min <strong>{Math.min(...forecastHrs.map(h => h.pressure||9999)).toFixed(0)} hPa</strong>
+                      {' · '}{weather.pressure < 990 ? '⚠️ Below danger threshold' : 'Within safe range'}
+                    </div>
+                  </div>
+                  <PressureChart data={chartData}/>
+                </div>
+              </div>
+            )}
+
+            {/* Row 4 — 7-Day threat forecast strip */}
+            {dailyFc.length > 0 && (
+              <div>
+                <h2 className="section-heading" style={{marginBottom:'1rem'}}>
+                  🗓️ 7-Day Threat Forecast
+                </h2>
+                <div className="forecast-strip">
+                  {dailyFc.map((d, i) => {
+                    const s2 = SEV[d.severity] || SEV['Low']
+                    const d2 = DIS[d.disasterType] || DIS['No Threat']
+                    return (
+                      <div key={i} className={`fc-card fc-${d.severity}`}>
+                        <div className="fc-date">{d.date}</div>
+                        <div className="fc-type">{d2.emoji}</div>
+                        <div className="fc-temp">{d.maxT.toFixed(0)}°C</div>
+                        <div
+                          className="fc-badge"
+                          style={{
+                            background:`${s2.color}15`,
+                            color: s2.color,
+                            border:`1px solid ${s2.color}35`,
+                          }}
+                        >
+                          {s2.emoji} {d.severity}
+                        </div>
+                        <div className="fc-stats">
+                          <span title="Wind">🌬️{d.maxW.toFixed(0)}</span>
+                          <span title="Rain">🌧️{d.maxR.toFixed(0)}</span>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Row 5 — Contributing Factors + Safety Advisories */}
+            <div className="advice-row">
+              <div className="card">
+                <div className="card-title">🛡️ Contributing Factors</div>
+                <ul className="factor-list">
+                  {alertReasons(weather).map((r, i) => (
+                    <li key={i} className="factor-item">
+                      <span style={{flexShrink:0}}>{r.ico}</span>
+                      <span>{r.txt}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+              <div className="card">
+                <div className="card-title">📋 Safety Advisories</div>
+                <ul className="advisory-list">
+                  {dynAdvisories(weather, severity, disasterType).map((adv, i) => (
+                    <li key={i} className="advisory-item">
+                      <span className="adv-bullet">›</span>
+                      <span>{adv}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          </>
+        )}
+
+        {/* ══ NAMED STORMS — NOAA NHC (seasonal, free, no API key) ══════ */}
+        {namedStorms.length > 0 && (
+          <div>
+            <h2 className="section-heading">
+              <span className="pdot pdot-red"></span>
+              🌀 Active Named Storms — NOAA NHC
+            </h2>
+            <div className="monitor-grid">
+              {namedStorms.map((s, i) => (
+                <div key={i} className="monitor-card extreme">
+                  <div className="monitor-card-header">
+                    <span className="monitor-city">🌀 {s.name}</span>
+                    <span className="monitor-country">{s.basin || 'Active'}</span>
+                  </div>
+                  <div className="monitor-card-body">
+                    <div className="monitor-badge extreme">Extreme</div>
                   </div>
                 </div>
               ))}
             </div>
-
-            {/* Pressure stat (full width) */}
-            <div className="stat-card" style={{ marginBottom: '1rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', textAlign: 'left', padding: '0.75rem 1rem' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <span style={{ fontSize: '1.2rem' }}>📊</span>
-                <div>
-                  <div className="stat-value" style={{ fontSize: '1.1rem' }}>{weather.pressure} hPa</div>
-                  <div className="stat-label">Surface Pressure</div>
-                </div>
-              </div>
-              <div style={{ textAlign: 'right' }}>
-                {(() => {
-                  const t = getTrend(weather.pressure, weather.avgPressure, true) // lower pressure = bad
-                  return <span style={{ fontSize: '0.82rem', color: t.color, fontWeight: 700 }}>{t.symbol} {t.label} hPa vs 30d avg</span>
-                })()}
-                {weather.pressure < 1005 && (
-                  <div style={{ fontSize: '0.72rem', color: '#f97316', marginTop: '2px' }}>
-                    {weather.pressure < 970 ? '🔴 Extreme low — cyclonic risk' : weather.pressure < 990 ? '🟠 Very low — active system' : '🟡 Below normal'}
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Severity + Disaster Type */}
-            {severity && (
-              <div className="severity-section">
-                <div className="severity-header-row">
-                  <div className="severity-label">Alert Severity</div>
-                  <button
-                    className="add-to-watchlist-btn"
-                    onClick={addToWatchlist}
-                    disabled={watchlist.includes(cityName)}
-                  >
-                    {watchlist.includes(cityName) ? '📍 Monitored' : '+ Monitor City'}
-                  </button>
-                </div>
-
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
-                  <span className={`severity-badge ${sevConfig.className}`}>
-                    <span className="severity-emoji">{sevConfig.emoji}</span>
-                    {severity}
-                  </span>
-
-                  {disasterType && disasterType !== 'No Threat' && (
-                    <span style={{
-                      display: 'inline-flex', alignItems: 'center', gap: '0.4rem',
-                      padding: '0.45rem 0.9rem', borderRadius: '999px',
-                      fontSize: '0.82rem', fontWeight: 700,
-                      background: dConfig.bg, color: dConfig.color,
-                      border: `1px solid ${dConfig.border}`,
-                      letterSpacing: '0.02em',
-                    }}>
-                      {dConfig.emoji} {disasterType}
-                    </span>
-                  )}
-                </div>
-
-                {/* Heat Index pill */}
-                {(() => {
-                  const hi = calculateHeatIndex(weather.temp, weather.humidity)
-                  return hi ? (
-                    <div style={{ marginTop: '0.6rem', fontSize: '0.8rem', color: '#f97316' }}>
-                      🌡️ Apparent temperature (heat index): <strong>{hi}°C</strong>
-                      {' '}— {hi - weather.temp >= 5 ? 'dangerously' : 'noticeably'} hotter than ambient
-                    </div>
-                  ) : null
-                })()}
-              </div>
-            )}
           </div>
         )}
-      </div>
 
-      {/* ── RIGHT: Alert Details Panel ─────────────────────── */}
-      {showDetails && (
-        <div className={`details-panel ${sevConfig.className}`}>
-          <div className={`details-header ${sevConfig.className}`}>
-            <span className="details-header-emoji">
-              {disasterType && disasterType !== 'No Threat' ? dConfig.emoji : sevConfig.emoji}
-            </span>
+        {/* ══ GLOBAL ALERTS ════════════════════════════════════════════ */}
+        <div>
+          <div className="section-hdr-row">
             <div>
-              <h2 className="details-headline">
-                {disasterType && disasterType !== 'No Threat' ? disasterType : `${severity} Alert`}
+              <h2 className="section-heading">
+                <span className="pdot pdot-cyan"></span>
+                🌍 Global Alerts
               </h2>
-              <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', marginTop: '0.35rem' }}>
-                <span className={`details-level-tag ${sevConfig.className}`}>{severity} Severity</span>
-                {disasterType && disasterType !== 'No Threat' && (
-                  <span style={{ fontSize: '0.68rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', padding: '0.2rem 0.6rem', borderRadius: '999px', background: dConfig.bg, color: dConfig.color, border: `1px solid ${dConfig.border}` }}>
-                    {disasterType}
-                  </span>
-                )}
-              </div>
+              <p className="section-sub">
+                Auto-scanning {CITIES.length} cities
+                {lastScan && <> · Updated {lastScan.toLocaleTimeString()}</>}
+              </p>
             </div>
+            {scanLoading && <div className="spinner-sm"></div>}
           </div>
 
-          <div className="details-body">
+          {scanLoading && !globalAlerts.length && (
+            <div className="scan-center">
+              <div className="spinner-lg"></div>
+              <span style={{fontSize:'0.84rem', color:'var(--muted)'}}>
+                Scanning global conditions...
+              </span>
+            </div>
+          )}
 
-            {/* ── Assessment (dynamic) ── */}
-            <section className="details-section">
-              <h3 className="section-title">Situational Assessment</h3>
-              <p className="section-text">{assessment}</p>
-            </section>
+          {!scanLoading && !globalAlerts.length && (
+            <div className="empty-box">
+              <span className="empty-ico">✅</span>
+              <p>All {CITIES.length} monitored cities are within safe parameters.</p>
+            </div>
+          )}
 
-            <div className="section-divider"></div>
-
-            {/* ── Compound Risk Score (unique feature) ── */}
-            {compound && (
-              <>
-                <section className="details-section">
-                  <h3 className="section-title">
-                    Risk Fingerprint
-                    <span style={{ marginLeft: '0.5rem', fontSize: '0.65rem', fontWeight: 400, color: 'var(--color-text-dim)', textTransform: 'none', letterSpacing: 0 }}>
-                      compound hazard score
-                    </span>
-                  </h3>
-
-                  {/* Score bar */}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.85rem' }}>
-                    <div style={{ fontSize: '1.6rem', fontWeight: 800, color: compoundBarColor, minWidth: '48px' }}>
-                      {compound.score}<span style={{ fontSize: '0.9rem', color: 'var(--color-text-dim)', fontWeight: 400 }}>/11</span>
+          {globalAlerts.length > 0 && (
+            <div className="monitor-grid">
+              {globalAlerts.map(a => {
+                const s2 = SEV[a.severity]     || { emoji:'❓', cls:'' }
+                const d2 = DIS[a.disasterType] || DIS['No Threat']
+                return (
+                  <div
+                    key={a.name}
+                    className={`monitor-card ${s2.cls}`}
+                    onClick={() => { setCity(a.name); fetchWeather() }}
+                  >
+                    <div className="monitor-card-header">
+                      <span className="monitor-city">{a.name}</span>
+                      <span className="monitor-country">{a.country}</span>
                     </div>
-                    <div style={{ flex: 1, background: 'rgba(148,163,184,0.12)', borderRadius: '999px', height: '8px', overflow: 'hidden' }}>
-                      <div style={{ height: '100%', width: `${compound.pct}%`, background: `linear-gradient(90deg, ${compoundBarColor}99, ${compoundBarColor})`, borderRadius: '999px', transition: 'width 0.8s ease' }}></div>
+                    <div className="monitor-card-body">
+                      <div className="monitor-temp">{a.temp}°C</div>
+                      <div className={`monitor-badge ${s2.cls}`}>{s2.emoji} {a.severity}</div>
                     </div>
-                    <span style={{ fontSize: '0.75rem', color: compoundBarColor, fontWeight: 700, minWidth: '32px' }}>{compound.pct}%</span>
-                  </div>
-
-                  {/* Per-parameter bars */}
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem' }}>
-                    {compound.bars.map(b => (
-                      <div key={b.label} style={{ display: 'grid', gridTemplateColumns: '90px 1fr 72px', alignItems: 'center', gap: '0.5rem' }}>
-                        <span style={{ fontSize: '0.73rem', color: 'var(--color-text-muted)' }}>{b.label}</span>
-                        <div style={{ background: 'rgba(148,163,184,0.1)', borderRadius: '999px', height: '5px', overflow: 'hidden' }}>
-                          <div style={{ height: '100%', width: `${b.pct}%`, background: levelColors[b.level] || '#94a3b8', borderRadius: '999px', transition: 'width 0.6s ease' }}></div>
-                        </div>
-                        <span style={{ fontSize: '0.7rem', color: levelColors[b.level], fontWeight: 600, textAlign: 'right' }}>{b.value}</span>
+                    {a.disasterType && a.disasterType !== 'No Threat' && (
+                      <div style={{marginBottom:'0.4rem'}}>
+                        <span style={{
+                          fontSize:'0.67rem', fontWeight:700,
+                          padding:'0.15rem 0.5rem', borderRadius:'999px',
+                          background:d2.bg, color:d2.color, border:`1px solid ${d2.bdr}`,
+                        }}>
+                          {d2.emoji} {a.disasterType}
+                        </span>
                       </div>
-                    ))}
-                  </div>
-
-                  {compound.score >= 3 && (
-                    <p style={{ marginTop: '0.75rem', fontSize: '0.78rem', color: 'var(--color-text-muted)', lineHeight: 1.5 }}>
-                      ⚠️ {compound.score >= 6 ? 'Critical' : 'Multiple'} parameters elevated simultaneously — compound events carry disproportionately higher risk than any single factor in isolation.
-                    </p>
-                  )}
-                </section>
-                <div className="section-divider"></div>
-              </>
-            )}
-
-            {/* ── Historical Context ── */}
-            {reason && (
-              <>
-                <section className="details-section">
-                  <h3 className="section-title">Historical Context (30-day)</h3>
-                  <div style={{ background: 'rgba(56,189,248,0.06)', border: '1px solid rgba(56,189,248,0.2)', borderLeft: '3px solid var(--color-accent)', borderRadius: '6px', padding: '0.75rem 1rem' }}>
-                    <p style={{ margin: 0, fontSize: '0.86rem', fontWeight: 500, color: 'var(--color-text)', lineHeight: 1.6 }}>{reason}</p>
-                  </div>
-                </section>
-                <div className="section-divider"></div>
-              </>
-            )}
-
-            {/* ── Contributing Factors ── */}
-            <section className="details-section">
-              <h3 className="section-title">Contributing Factors</h3>
-              <ul className="factor-list">
-                {factors.map((r, i) => (
-                  <li key={i} className="factor-item">
-                    <span className="factor-icon">{r.icon}</span>
-                    <span>{r.text}</span>
-                  </li>
-                ))}
-              </ul>
-            </section>
-
-            <div className="section-divider"></div>
-
-            {/* ── Advisories (dynamic) ── */}
-            <section className="details-section">
-              <h3 className="section-title">Safety Advisories</h3>
-              <ul className="advisory-list">
-                {advisories.map((adv, i) => (
-                  <li key={i} className="advisory-item">
-                    <span className="advisory-bullet">›</span>
-                    <span>{adv}</span>
-                  </li>
-                ))}
-              </ul>
-            </section>
-
-          </div>
-        </div>
-      )}
-
-      {/* ── Global Alerts ────────────────────────────────────── */}
-      <div className="global-alerts-container">
-        <div className="global-alerts-header">
-          <div className="global-alerts-title-group">
-            <h2 className="global-alerts-title">
-              <span className="global-pulse-dot"></span>
-              🌍 Global Alerts
-            </h2>
-            <p className="global-alerts-subtitle">
-              Auto-scanning {GLOBAL_SCAN_CITIES.length} major cities
-              {lastScanTime && <> · Updated {lastScanTime.toLocaleTimeString()}</>}
-            </p>
-          </div>
-          {scanLoading && <div className="spinner-sm"></div>}
-        </div>
-
-        {scanLoading && globalAlerts.length === 0 && (
-          <div className="scan-loading">
-            <div className="spinner"></div>
-            <span className="loading-text">Scanning global weather conditions...</span>
-          </div>
-        )}
-
-        {!scanLoading && globalAlerts.length === 0 && (
-          <div className="global-empty-state">
-            <span className="empty-icon">✅</span>
-            <p>No active alerts detected. All {GLOBAL_SCAN_CITIES.length} monitored cities are within safe parameters.</p>
-          </div>
-        )}
-
-        {globalAlerts.length > 0 && (
-          <div className="monitor-grid">
-            {globalAlerts.map(alert => {
-              const config = SEVERITY_CONFIG[alert.severity] || { emoji: '❓', className: '' }
-              const dc     = DISASTER_CONFIG[alert.disasterType] || DISASTER_CONFIG['No Threat']
-              return (
-                <div
-                  key={alert.name}
-                  className={`monitor-card ${config.className}`}
-                  onClick={() => { setCity(alert.name); fetchWeather() }}
-                >
-                  <div className="monitor-card-header">
-                    <span className="monitor-city">{alert.name}</span>
-                    <span className="monitor-country">{alert.country}</span>
-                  </div>
-                  <div className="monitor-card-body">
-                    <div className="monitor-temp">{alert.temp}°C</div>
-                    <div className={`monitor-badge ${config.className}`}>{config.emoji} {alert.severity}</div>
-                  </div>
-                  {alert.disasterType && alert.disasterType !== 'No Threat' && (
-                    <div style={{ marginBottom: '0.5rem' }}>
-                      <span style={{ fontSize: '0.68rem', fontWeight: 700, padding: '0.15rem 0.5rem', borderRadius: '999px', background: dc.bg, color: dc.color, border: `1px solid ${dc.border}` }}>
-                        {dc.emoji} {alert.disasterType}
-                      </span>
+                    )}
+                    <div className="monitor-card-footer">
+                      <span>🌬️{a.wind}km/h</span>
+                      <span>🌧️{a.rain}mm</span>
+                      <span>📉{a.pressure}hPa</span>
                     </div>
-                  )}
-                  <div className="monitor-card-footer">
-                    <span>🌬️ {alert.wind}km/h</span>
-                    <span>🌧️ {alert.rain}mm</span>
-                    <span>📉 {alert.pressure}hPa</span>
                   </div>
-                </div>
-              )
-            })}
-          </div>
-        )}
-      </div>
-
-      {/* ── My Watchlist ─────────────────────────────────────── */}
-      <div className="monitor-container">
-        <div className="monitor-header">
-          <div className="monitor-title-group">
-            <h2 className="monitor-title">📍 My Watchlist</h2>
-            <p className="monitor-subtitle">Your saved locations</p>
-          </div>
+                )
+              })}
+            </div>
+          )}
         </div>
 
-        {watchlist.length === 0 && (
-          <div className="watchlist-empty-state">
-            <span className="empty-icon">📍</span>
-            <p>No cities added yet. Search for a city above and click <strong>"+ Monitor City"</strong> to add it here.</p>
-          </div>
-        )}
+        {/* ══ WATCHLIST ════════════════════════════════════════════════ */}
+        <div>
+          <h2 className="section-heading">📍 My Watchlist</h2>
 
-        {watchlist.length > 0 && (
-          <div className="monitor-grid">
-            {watchlist.map(name => {
-              const data = monitorData[name]
-              if (!data) return (
-                <div key={name} className="monitor-card skeleton">
-                  <div className="skeleton-line short"></div>
-                  <div className="skeleton-line"></div>
-                </div>
-              )
-              const config = SEVERITY_CONFIG[data.severity] || { emoji: '❓', className: '' }
-              const dc     = DISASTER_CONFIG[data.disasterType] || DISASTER_CONFIG['No Threat']
-              return (
-                <div
-                  key={name}
-                  className={`monitor-card ${config.className}`}
-                  onClick={() => { setCity(data.resolvedName || name); fetchWeather() }}
-                >
-                  <button className="remove-btn" onClick={e => removeFromWatchlist(e, name)}>×</button>
-                  <div className="monitor-card-header">
-                    <span className="monitor-city">{data.resolvedName}</span>
-                    <span className="monitor-country">{data.country}</span>
+          {!watchlist.length && (
+            <div className="empty-box">
+              <span className="empty-ico">📍</span>
+              <p>Search a city above, then click <strong>+ Watch</strong> to track it here.</p>
+            </div>
+          )}
+
+          {watchlist.length > 0 && (
+            <div className="monitor-grid">
+              {watchlist.map(name => {
+                const data = monData[name]
+                if (!data) return (
+                  <div key={name} className="monitor-card skeleton">
+                    <div className="skel-line short"></div>
+                    <div className="skel-line"></div>
                   </div>
-                  <div className="monitor-card-body">
-                    <div className="monitor-temp">{data.temp}°C</div>
-                    <div className={`monitor-badge ${config.className}`}>{config.emoji} {data.severity}</div>
-                  </div>
-                  {data.disasterType && data.disasterType !== 'No Threat' && (
-                    <div style={{ marginBottom: '0.5rem' }}>
-                      <span style={{ fontSize: '0.68rem', fontWeight: 700, padding: '0.15rem 0.5rem', borderRadius: '999px', background: dc.bg, color: dc.color, border: `1px solid ${dc.border}` }}>
-                        {dc.emoji} {data.disasterType}
-                      </span>
+                )
+                const s2 = SEV[data.severity]     || { emoji:'❓', cls:'' }
+                const d2 = DIS[data.disasterType] || DIS['No Threat']
+                return (
+                  <div
+                    key={name}
+                    className={`monitor-card ${s2.cls}`}
+                    onClick={() => { setCity(data.resolvedName || name); fetchWeather() }}
+                  >
+                    <button className="remove-btn" onClick={e => removeWatch(e, name)}>×</button>
+                    <div className="monitor-card-header">
+                      <span className="monitor-city">{data.resolvedName}</span>
+                      <span className="monitor-country">{data.country}</span>
                     </div>
-                  )}
-                  <div className="monitor-card-footer">
-                    <span>🌬️ {data.wind}km/h</span>
-                    <span>🌧️ {data.rain}mm</span>
+                    <div className="monitor-card-body">
+                      <div className="monitor-temp">{data.temp}°C</div>
+                      <div className={`monitor-badge ${s2.cls}`}>{s2.emoji} {data.severity}</div>
+                    </div>
+                    {data.disasterType && data.disasterType !== 'No Threat' && (
+                      <div style={{marginBottom:'0.4rem'}}>
+                        <span style={{
+                          fontSize:'0.67rem', fontWeight:700,
+                          padding:'0.15rem 0.5rem', borderRadius:'999px',
+                          background:d2.bg, color:d2.color, border:`1px solid ${d2.bdr}`,
+                        }}>
+                          {d2.emoji} {data.disasterType}
+                        </span>
+                      </div>
+                    )}
+                    <div className="monitor-card-footer">
+                      <span>🌬️{data.wind}km/h</span>
+                      <span>🌧️{data.rain}mm</span>
+                    </div>
                   </div>
-                </div>
-              )
-            })}
-          </div>
-        )}
-      </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
 
+      </div>
     </div>
   )
 }
