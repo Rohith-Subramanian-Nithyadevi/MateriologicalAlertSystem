@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 
-const BACKEND_URL = "http://localhost:3000"
+const BACKEND_URL = "https://meteorological-backend.onrender.com"
 
 const SEVERITY_CONFIG = {
   Low:      { emoji: '✅', className: 'low' },
