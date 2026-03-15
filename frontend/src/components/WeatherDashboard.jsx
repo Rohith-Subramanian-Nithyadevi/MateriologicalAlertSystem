@@ -82,10 +82,10 @@ function monthName(m) {
 }
 
 // ─── Seasonal archive fetch ───────────────────────────────────────────────────
-
 async function fetchSeasonalNormals(lat, lon, month, latForSeason) {
-  const year  = new Date().getFullYear()
-  const years = [year-5, year-4, year-3, year-2, year-1]
+  // Fixed 15-year modern baseline: 2010–2024
+  // Avoids pre-satellite-era data quality issues and captures recent climate shifts
+  const years = [2010,2011,2012,2013,2014,2015,2016,2017,2018,2019,2020,2021,2022,2023,2024]
 
   const allTemp = [], allWind = [], allRain = [], allHum = []
 
@@ -456,7 +456,7 @@ function SeasonalContextCard({ normals, current, seasonalResult, loading }) {
         <div>
           <div className="card-title">{season?.icon} Seasonal Context — {season?.name ?? monthName(month)}</div>
           <div className="card-sub" style={{marginBottom:0}}>
-            5-year baseline · {monthName(month)} normals · {years[0]}–{years[years.length-1]}
+            15-year baseline (2010–2024) · {monthName(month)} normals
             {normals.temp.count > 0 && ` · ${normals.temp.count} day-samples`}
           </div>
         </div>
@@ -488,7 +488,7 @@ function SeasonalContextCard({ normals, current, seasonalResult, loading }) {
           <span>✅</span>
           <span style={{fontSize:'0.82rem',color:'var(--muted)'}}>
             All parameters consistent with expected {season?.name} conditions for this location.
-            This is what <strong>{monthName(month)}</strong> normally looks like here based on 5 years of archive data.
+            This is what <strong>{monthName(month)}</strong> normally looks like here based on 15 years (2010–2024) of archive data.
           </span>
         </div>
       )}
