@@ -682,7 +682,7 @@
 
 /* ═══ SKELETON ═══════════════════════════════════════════════════════ */
 
-.skeleton {}
+/* Skeleton loading animation */
 .skel-line {
   height: 11px; background: var(--border); border-radius: 4px; margin-bottom: 8px;
   position: relative; overflow: hidden;
@@ -718,9 +718,106 @@
 
 /* ═══ RESPONSIVE ═════════════════════════════════════════════════════ */
 
+/* ═══ CALAMITY CLASSIFICATION GRID ═══════════════════════════════════ */
+
+.calamity-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 0.85rem;
+  margin-top: 0.75rem;
+}
+.calamity-card {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--border);
+  border-radius: var(--r-sm);
+  padding: 1rem;
+  transition: transform 0.2s, border-color 0.2s, background 0.2s;
+  opacity: 0.6;
+}
+.calamity-card.active {
+  opacity: 1;
+  background: rgba(8, 20, 48, 0.85);
+}
+.calamity-card:hover {
+  transform: translateY(-2px);
+  border-color: var(--border-hi);
+}
+.calamity-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.6rem;
+}
+.calamity-emoji {
+  font-size: 1.3rem;
+  flex-shrink: 0;
+}
+.calamity-name {
+  font-family: var(--font-display);
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--text);
+}
+.calamity-prob-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+.calamity-prob-value {
+  font-family: var(--font-display);
+  font-size: 1.4rem;
+  font-weight: 800;
+}
+.calamity-level-badge {
+  font-size: 0.62rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 0.18rem 0.5rem;
+  border-radius: 999px;
+}
+.calamity-bar-track {
+  height: 4px;
+  background: rgba(255,255,255,0.06);
+  border-radius: 999px;
+  overflow: hidden;
+  margin-bottom: 0.5rem;
+}
+.calamity-bar-fill {
+  height: 100%;
+  border-radius: 999px;
+  transition: width 0.7s ease;
+}
+.calamity-window {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.7rem;
+  margin-bottom: 0.35rem;
+}
+.calamity-window-label {
+  color: var(--dim);
+  font-weight: 500;
+}
+.calamity-window-value {
+  color: var(--muted);
+  font-weight: 600;
+}
+.calamity-desc {
+  font-size: 0.68rem;
+  color: var(--dim);
+  line-height: 1.5;
+}
+
+/* ═══ RESPONSIVE ═════════════════════════════════════════════════════ */
+
 @media (max-width: 520px) {
   .hero-stats { gap: 1rem; flex-wrap: wrap; justify-content: center; }
   .hstat-div  { display: none; }
   .forecast-strip { grid-template-columns: repeat(3, 1fr); }
   .search-btn { padding: 0.7rem 1.1rem; }
+  .calamity-grid { grid-template-columns: repeat(2, 1fr); }
+  .results-row { grid-template-columns: 1fr; }
 }

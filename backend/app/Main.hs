@@ -14,6 +14,10 @@ main = do
 
     middleware simpleCors
 
+    -- Health check
+    get "/health" $ do
+      json $ object [ "status" .= ("ok" :: String) ]
+
     get "/classify" $ do
       temp <- queryParam "temp"
       rain <- queryParam "rain"
@@ -29,12 +33,13 @@ main = do
             , pressure    = pres
             }
 
-      let (sev, reason, disasterType) = classify weather
+      let (sev, reason, disasterType, prob) = classify weather
 
       json $ object
         [ "severity"     .= sev
         , "reason"       .= reason
         , "disasterType" .= disasterType
+        , "probability"  .= prob
         ]
 
     get "/classifyWithHistory" $ do
@@ -64,10 +69,11 @@ main = do
             , avgPressure    = avgPres
             }
 
-      let (sev, reason, disasterType) = classifyWithHistory weather avg
+      let (sev, reason, disasterType, prob) = classifyWithHistory weather avg
 
       json $ object
         [ "severity"     .= sev
         , "reason"       .= reason
         , "disasterType" .= disasterType
+        , "probability"  .= prob
         ]

@@ -70,7 +70,7 @@ data PressureCategory
   | ExtremeLowPressure   -- < 970 hPa
   deriving (Show, Eq, Ord)
 
--- | Primary disaster type (compound event classification)
+-- | Extended disaster type classification (9 categories)
 data DisasterType
   = NoThreat
   | HeatStress
@@ -80,6 +80,12 @@ data DisasterType
   | StormSurge
   | ThunderstormRisk
   | CompoundRisk
+  | TropicalStorm
+  | HailstormRisk
+  | HeavyRainfallEvent
+  | ExtremeWindEvent
+  | HeatWaveEvent
+  | ColdWaveEvent
   deriving (Show, Eq)
 
 -- | Composite ADT — all 5 parameters categorised
