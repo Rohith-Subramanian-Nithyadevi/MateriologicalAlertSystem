@@ -293,12 +293,26 @@ export default function WeatherDashboard() {
       if (!cur) throw new Error('Current conditions unavailable.')
 
       const temp = cur.temperature_2m ?? 0, wind = cur.wind_speed_10m ?? 0, windDir = cur.wind_direction_10m ?? 0
-      const humidity = cur.relative_humidity_2m ?? 50, pressure = cur.pressure_msl ?? 1013, rain = cur.rain ?? 0
+      const humidity = cur.relative_humidity_2m ?? 50, pressure = cur.pressure_msl ?? 1013
+
+      // Extract future forecast hours to calculate 24h accumulated rain
+      const now = new Date()
+      const future = (wd.hourly?.time || []).map((t, i) => ({
+        time: t, wind: wd.hourly.wind_speed_10m[i] ?? 0, windDir: wd.hourly.wind_direction_10m[i] ?? 0,
+        pressure: wd.hourly.pressure_msl[i] ?? 1013, rain: wd.hourly.rain[i] ?? 0,
+        temp: wd.hourly.temperature_2m[i] ?? 0, humidity: wd.hourly.relative_humidity_2m[i] ?? 50,
+      })).filter(h => new Date(h.time) >= now).slice(0, 168) // 7 days
+
+      // Rain for display and ML: use accumulated rainfall over the next 24 hours
+      // (as ML thresholds are based on daily accumulation, not instantaneous hourly rates)
+      const rain = parseFloat((future.slice(0, 24).reduce((s, h) => s + h.rain, 0)).toFixed(1))
+
+      setForecastHrs(future)
 
       // Calculate 30-day averages
       let avgTemp = 0, avgWind = 0, avgHumidity = 50, avgPressure = 1013, avgRain = 0
       if (wd.hourly?.time) {
-        const h = wd.hourly, now = new Date()
+        const h = wd.hourly
         const pastEnd = h.time.findIndex(t => new Date(t) >= now)
         const end = pastEnd > 0 ? pastEnd : h.time.length
         const sl = k => (h[k] || []).slice(0, end), sum = a => a.reduce((x, y) => x + (y || 0), 0)
@@ -313,15 +327,6 @@ export default function WeatherDashboard() {
 
       const weatherData = { temp, wind, windDir, humidity, pressure, rain, avgTemp, avgWind, avgHumidity, avgPressure, avgRain }
       setWeather(weatherData)
-
-      // Extract future forecast hours
-      const now = new Date()
-      const future = (wd.hourly?.time || []).map((t, i) => ({
-        time: t, wind: wd.hourly.wind_speed_10m[i] ?? 0, windDir: wd.hourly.wind_direction_10m[i] ?? 0,
-        pressure: wd.hourly.pressure_msl[i] ?? 1013, rain: wd.hourly.rain[i] ?? 0,
-        temp: wd.hourly.temperature_2m[i] ?? 0, humidity: wd.hourly.relative_humidity_2m[i] ?? 50,
-      })).filter(h => new Date(h.time) >= now).slice(0, 168) // 7 days
-      setForecastHrs(future)
 
       // ── Run Hybrid ML Engine ──
       const mlPrediction = hybridPredict(weatherData, future)
