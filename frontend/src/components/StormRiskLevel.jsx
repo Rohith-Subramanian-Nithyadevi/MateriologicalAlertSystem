@@ -51,6 +51,66 @@ export default function StormRiskLevel({ severity, disasterType, prediction, wea
   const sc = SEV[severity] || { emoji: '❓', cls: '', color: '#3d6275' }
   const dc = DIS[disasterType] || DIS['No Threat']
   const prob = prediction?.overallProbability ?? 0
+  const mc = prediction?.modelContributions
+
+  // ── Build model contribution rows with correct data ──
+  const modelRows = mc ? [
+    {
+      label: 'Logistic Reg.',
+      val: `${mc.lrTopScore ?? mc.logisticRegression}%`,
+      note: mc.lrTopEvent ? `→ ${mc.lrTopEvent}` : 'per-disaster sigmoid',
+      barPct: Math.min(mc.lrTopScore ?? mc.logisticRegression, 100),
+      color: '#22d3ee',
+    },
+    {
+      label: 'Random Forest',
+      val: (mc.randomForestActivity ?? 0) > 0 ? `${mc.randomForest}%` : '—',
+      note: (mc.randomForestActivity ?? 0) > 0
+        ? (mc.rfPrimary && mc.rfPrimary !== 'No Threat'
+            ? `→ ${mc.rfPrimary} (${mc.randomForestActivity}% trees)`
+            : `${mc.randomForestActivity}% trees active`)
+        : 'no threshold crossed — conditions mild',
+      barPct: Math.min(mc.randomForestActivity ?? 0, 100),
+      color: '#818cf8',
+    },
+    {
+      label: 'Grad. Boost',
+      // show highest GB score found (most informative signal)
+      val: `${mc.gradientBoostingTop ?? mc.gradientBoosting}%`,
+      note: `primary: ${mc.gradientBoosting}%`,
+      barPct: Math.min(mc.gradientBoostingTop ?? mc.gradientBoosting, 100),
+      color: '#a78bfa',
+    },
+    {
+      label: 'Time-Series',
+      // multiplier: 1.00 = no trend data, >1 = risk amplified
+      val: `×${mc.timeSeriesMultiplier?.toFixed(2) ?? '1.00'}`,
+      note: mc.timeSeriesPressureDrop
+        ? `Δp ${mc.timeSeriesPressureDrop > 0 ? '-' : '+'}${Math.abs(mc.timeSeriesPressureDrop)}hPa/24h`
+        : 'no trend data',
+      // bar shows deviation from 1.0 baseline (max useful range ×1.0–×2.0)
+      barPct: Math.min(Math.max(0, (mc.timeSeriesMultiplier - 1.0) / 1.0 * 100), 100),
+      color: '#fbbf24',
+      // always show at least a thin indicator bar
+      minBar: 4,
+    },
+    {
+      label: 'Historical Adj.',
+      val: mc.historicalAdjustment != null
+        ? `${mc.historicalAdjustment > 0 ? '+' : ''}${mc.historicalAdjustment}`
+        : '—',
+      note: mc.historicalAnomalyCount != null
+        ? mc.historicalAnomalyCount === 0
+          ? 'seasonal normal'
+          : `${mc.historicalAnomalyCount} anomaly${mc.historicalAnomalyCount > 1 ? 's' : ''} detected`
+        : 'awaiting baseline',
+      // bar: 0 adjustment = center; positive = risk up; range -30 to +45
+      barPct: mc.historicalAdjustment != null
+        ? Math.min(Math.max(0, (mc.historicalAdjustment + 30) / 75 * 100), 100)
+        : 0,
+      color: mc.historicalAdjustment > 0 ? '#fb923c' : mc.historicalAdjustment < 0 ? '#4ade80' : '#52525b',
+    },
+  ] : []
 
   return (
     <div className="card" id="storm-risk-level">
@@ -106,24 +166,48 @@ export default function StormRiskLevel({ severity, disasterType, prediction, wea
         </div>
       </div>
 
-      {/* ML model contributions */}
-      {prediction?.modelContributions && (
+      {/* ML model contributions — FIXED display */}
+      {modelRows.length > 0 && (
         <div style={{ marginTop: '0.75rem', padding: '0.7rem 0.85rem', background: 'rgba(34,211,238,0.04)', border: '1px solid rgba(34,211,238,0.1)', borderRadius: 'var(--r-sm)' }}>
-          <div style={{ fontSize: '0.7rem', fontWeight: 600, color: 'var(--cyan)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '0.5rem' }}>Hybrid ML Model Contributions</div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: '0.4rem' }}>
-            {[
-              { label: 'Logistic Reg.', val: `${prediction.modelContributions.logisticRegression}%` },
-              { label: 'Random Forest', val: `${prediction.modelContributions.randomForest}%` },
-              { label: 'Grad. Boost', val: `${prediction.modelContributions.gradientBoosting.toFixed(1)}%` },
-              { label: 'Time-Series', val: `×${prediction.modelContributions.timeSeriesMultiplier.toFixed(2)}` },
-              { label: 'Historical Adj.', val: `${prediction.modelContributions.historicalAdjustment > 0 ? '+' : ''}${prediction.modelContributions.historicalAdjustment}` },
-            ].map(m => (
-              <div key={m.label} style={{ fontSize: '0.72rem', color: 'var(--muted)', display: 'flex', justifyContent: 'space-between', padding: '0.2rem 0', borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
-                <span>{m.label}</span>
-                <span style={{ fontWeight: 700, color: 'var(--text)' }}>{m.val}</span>
+          <div style={{ fontSize: '0.7rem', fontWeight: 600, color: 'var(--cyan)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '0.6rem' }}>
+            Hybrid ML Model Contributions
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.55rem' }}>
+            {modelRows.map(m => (
+              <div key={m.label}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '0.2rem' }}>
+                  <span style={{ fontSize: '0.72rem', color: 'var(--muted)' }}>{m.label}</span>
+                  <div style={{ textAlign: 'right' }}>
+                    <span style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--text)' }}>{m.val}</span>
+                    {m.note && (
+                      <span style={{ fontSize: '0.65rem', color: 'var(--dim)', marginLeft: '0.4rem' }}>
+                        {m.note}
+                      </span>
+                    )}
+                  </div>
+                </div>
+                {/* Progress bar */}
+                <div style={{ height: '3px', background: 'rgba(255,255,255,0.06)', borderRadius: '999px', overflow: 'hidden' }}>
+                  <div style={{
+                    height: '100%',
+                    width: `${Math.max(m.minBar ?? 0, m.barPct)}%`,
+                    background: m.color,
+                    borderRadius: '999px',
+                    transition: 'width 0.7s ease',
+                    opacity: m.barPct === 0 ? 0.3 : 0.85,
+                  }} />
+                </div>
               </div>
             ))}
           </div>
+
+          {/* Footnote: explain time-series and historical when data is absent */}
+          {(mc.timeSeriesMultiplier === 1.0 || mc.historicalAdjustment === 0) && (
+            <div style={{ marginTop: '0.6rem', fontSize: '0.65rem', color: 'var(--dim)', lineHeight: 1.5, borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '0.4rem' }}>
+              {mc.timeSeriesMultiplier === 1.0 && '⏱ Time-Series: ×1.00 = no significant pressure/wind trend detected in forecast. '}
+              {mc.historicalAdjustment === 0 && '📊 Historical: 0 = seasonal normals loading or within range.'}
+            </div>
+          )}
         </div>
       )}
     </div>

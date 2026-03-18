@@ -87,7 +87,7 @@ async function fetchSeasonalNormals(lat, lon, month, latForSeason) {
 
 // ─── Seasonal severity adjustment ─────────────────────────────────────────────
 
-function seasonalSeverity(current, normals, baseSeverity) {
+function seasonalSeverity(current, normals, baseSeverity, primaryEvent = '') {
   if (!normals) return { severity: baseSeverity, anomalies: [], overridden: false }
 
   const order = ['Low', 'Moderate', 'High', 'Extreme']
@@ -106,8 +106,21 @@ function seasonalSeverity(current, normals, baseSeverity) {
     finalSev = 'Moderate'; overridden = true
   }
 
-  // Downgrade if no anomalies and conditions seasonal-normal
-  if (!anomalies.filter(a => a.isBad).length && baseSeverity !== 'Low' && current.rain < (normals.rain.mean ?? 0) * 1.5) {
+  // Downgrade only when conditions are truly seasonal-normal.
+  // GUARD: never downgrade when primary event is temperature-driven
+  // or when temp is already in a danger zone (cold wave / heatwave range)
+  const tempDrivenEvents = ['Cold Wave', 'Heatwave', 'Heat Stress', 'Cold Stress']
+  const isTempDriven = tempDrivenEvents.some(e => primaryEvent.includes(e.split(' ')[0]))
+  const tempInDangerZone = current.temp > 38 || current.temp < 5
+
+  const shouldDowngrade =
+    !anomalies.filter(a => a.isBad).length &&
+    baseSeverity !== 'Low' &&
+    current.rain < (normals.rain.mean ?? 0) * 1.5 &&
+    !isTempDriven &&
+    !tempInDangerZone
+
+  if (shouldDowngrade) {
     const idx = order.indexOf(baseSeverity)
     if (idx > 0) { finalSev = order[idx - 1]; overridden = true }
   }
@@ -361,7 +374,7 @@ export default function WeatherDashboard() {
       fetchSeasonalNormals(lat, lon, currentMonth, lat)
         .then(normals => {
           setSeasonalNormals(normals)
-          const result = seasonalSeverity(weatherData, normals, mlPrediction.severity)
+          const result = seasonalSeverity(weatherData, normals, mlPrediction.severity, mlPrediction.primaryEvent)
           setSeasonalResult(result)
           if (result.overridden) setSeverity(result.severity)
           // Re-run forecast with seasonal normals

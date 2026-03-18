@@ -2,7 +2,7 @@
  * HybridMLEngine.js
  * 
  * A hybrid ML-inspired prediction engine combining 5 techniques:
- *   1. Logistic Regression  — binary storm detection (sigmoid on weighted params)
+ *   1. Logistic Regression  — 9 per-disaster models (one sigmoid per event type)
  *   2. Random Forest         — event type voting (7 independent decision trees)
  *   3. Gradient Boosting     — risk probability refinement (sequential residuals)
  *   4. Time-Series (ARIMA)   — trend detection (pressure/wind acceleration)
@@ -32,44 +32,135 @@ const SEVERITY_ORDER = ['Low', 'Moderate', 'High', 'Extreme']
 const SEVERITY_COLORS = { Low: '#4ade80', Moderate: '#fbbf24', High: '#fb923c', Extreme: '#f87171' }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 1. LOGISTIC REGRESSION — Binary storm detection
-//    Sigmoid(Σ wᵢxᵢ + b) → probability of severe weather event
+// 1. LOGISTIC REGRESSION — One model per disaster type
+//
+//    Each model has its own weights tuned to the signals that matter for THAT
+//    specific hazard. sigmoid(z) -> probability 0-100%.
+//    Math.max(0, x - threshold) = "how far above threshold am I?" (relu-like)
 // ─────────────────────────────────────────────────────────────────────────────
-
-const LR_WEIGHTS = {
-  rain:     0.012,   // each mm of rain adds 1.2% logit
-  wind:     0.018,   // each km/h adds 1.8%
-  temp_hot: 0.025,   // each °C above 40 adds 2.5%
-  temp_cold:-0.03,   // each °C below 4 subtracts 3%
-  humidity: 0.008,   // each % above 75 adds 0.8%
-  pressure:-0.015,   // each hPa below 1013 adds 1.5% (inverted)
-}
-const LR_BIAS = -3.2  // baseline bias — no storm when all params neutral
 
 function sigmoid(x) {
   return 1 / (1 + Math.exp(-x))
 }
 
+function lr(z) {
+  return Math.round(sigmoid(z) * 1000) / 10
+}
+
+// Thunderstorm: wind + rain together + falling pressure
+function lr_thunderstorm(w) {
+  const z = -3.5
+    + 0.020 * Math.max(0, w.wind - 20)
+    + 0.015 * Math.max(0, w.rain - 10)
+    + 0.020 * Math.max(0, 1013 - w.pressure)
+    + 0.006 * Math.max(0, w.humidity - 70)
+  return lr(z)
+}
+
+// Cyclone: extreme pressure drop + strong wind + heavy rain
+function lr_cyclone(w) {
+  const z = -5.0
+    + 0.060 * Math.max(0, 1013 - w.pressure)
+    + 0.025 * Math.max(0, w.wind - 60)
+    + 0.012 * Math.max(0, w.rain - 50)
+    + 0.008 * Math.max(0, w.humidity - 80)
+  return lr(z)
+}
+
+// Tropical Storm: like cyclone but lower thresholds
+function lr_tropicalStorm(w) {
+  const z = -4.0
+    + 0.040 * Math.max(0, 1013 - w.pressure)
+    + 0.018 * Math.max(0, w.wind - 40)
+    + 0.010 * Math.max(0, w.rain - 30)
+    + 0.007 * Math.max(0, w.humidity - 75)
+  return lr(z)
+}
+
+// Hailstorm: cold air + wind shear + moderate rain + high humidity
+function lr_hailstorm(w) {
+  const z = -4.5
+    + 0.050 * Math.max(0, 25 - w.temp)
+    + 0.020 * Math.max(0, w.wind - 30)
+    + 0.015 * Math.max(0, w.rain - 10)
+    + 0.012 * Math.max(0, w.humidity - 70)
+    + 0.010 * Math.max(0, 1013 - w.pressure)
+  return lr(z)
+}
+
+// Flood Risk: rainfall accumulation is the overwhelming signal
+function lr_floodRisk(w) {
+  const z = -3.8
+    + 0.025 * Math.max(0, w.rain - 20)
+    + 0.015 * Math.max(0, w.rain - 64)
+    + 0.010 * Math.max(0, w.humidity - 80)
+    + 0.008 * Math.max(0, 1013 - w.pressure)
+  return lr(z)
+}
+
+// Heatwave: temperature + humidity; wind provides slight relief
+function lr_heatwave(w) {
+  const z = -4.2
+    + 0.080 * Math.max(0, w.temp - 35)
+    + 0.020 * Math.max(0, w.temp - 40)
+    + 0.015 * Math.max(0, w.humidity - 60)
+    - 0.010 * Math.max(0, w.wind - 10)
+  return lr(z)
+}
+
+// Heavy Rainfall: lower rain threshold than flood, no pressure needed
+function lr_heavyRainfall(w) {
+  const z = -3.2
+    + 0.022 * Math.max(0, w.rain - 15)
+    + 0.010 * Math.max(0, w.humidity - 75)
+    + 0.006 * Math.max(0, 1013 - w.pressure)
+  return lr(z)
+}
+
+// Extreme Wind: wind dominates entirely
+function lr_extremeWind(w) {
+  const z = -4.0
+    + 0.035 * Math.max(0, w.wind - 50)
+    + 0.020 * Math.max(0, w.wind - 88)
+    + 0.015 * Math.max(0, 1013 - w.pressure)
+  return lr(z)
+}
+
+// Cold Wave: cold temp is the signal; wind chill amplifies it
+function lr_coldWave(w) {
+  const z = -3.5
+    + 0.080 * Math.max(0, 10 - w.temp)
+    + 0.020 * Math.max(0, 0 - w.temp)
+    + 0.010 * Math.max(0, w.wind - 15)
+  return lr(z)
+}
+
 /**
- * Logistic Regression: returns storm probability 0–100%
- * @param {{ temp, wind, rain, humidity, pressure }} w — weather params
- * @returns {number} probability 0–100
+ * Run ALL 9 LR models — returns per-disaster probability + overall max.
  */
+export function logisticRegressionAll(w) {
+  const perEvent = {
+    'Thunderstorm':   lr_thunderstorm(w),
+    'Cyclone':        lr_cyclone(w),
+    'Tropical Storm': lr_tropicalStorm(w),
+    'Hailstorm':      lr_hailstorm(w),
+    'Flood Risk':     lr_floodRisk(w),
+    'Heatwave':       lr_heatwave(w),
+    'Heavy Rainfall': lr_heavyRainfall(w),
+    'Extreme Wind':   lr_extremeWind(w),
+    'Cold Wave':      lr_coldWave(w),
+  }
+  const overall = Math.round(Math.max(...Object.values(perEvent)) * 10) / 10
+  return { perEvent, overall }
+}
+
+// Backward-compatible export — returns highest LR probability across all models
 export function logisticStormProb(w) {
-  const z = LR_BIAS
-    + LR_WEIGHTS.rain * Math.max(0, w.rain)
-    + LR_WEIGHTS.wind * Math.max(0, w.wind)
-    + LR_WEIGHTS.temp_hot * Math.max(0, w.temp - 40)
-    + LR_WEIGHTS.temp_cold * Math.min(0, w.temp - 4)
-    + LR_WEIGHTS.humidity * Math.max(0, w.humidity - 75)
-    + LR_WEIGHTS.pressure * (1013 - w.pressure)
-  return Math.round(sigmoid(z) * 1000) / 10  // one decimal
+  return logisticRegressionAll(w).overall
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 2. RANDOM FOREST — Event type voting
-//    7 independent decision trees, each votes for one event type
-//    Majority vote determines primary disaster type
 // ─────────────────────────────────────────────────────────────────────────────
 
 function tree1_pressureWind(w) {
@@ -85,14 +176,17 @@ function tree2_rainfall(w) {
   if (w.rain > 115) return 'Heavy Rainfall'
   if (w.rain > 64 && w.pressure < 1005) return 'Flood Risk'
   if (w.rain > 15 && w.wind > 40) return 'Thunderstorm'
+  if (w.rain > 30) return 'Heavy Rainfall'
   return null
 }
 
 function tree3_temperature(w) {
   if (w.temp >= 47) return 'Heatwave'
   if (w.temp >= 40 && w.humidity >= 75) return 'Heatwave'
+  if (w.temp >= 38) return 'Heatwave'
   if (w.temp <= 0) return 'Cold Wave'
   if (w.temp <= 4 && w.wind > 30) return 'Cold Wave'
+  if (w.temp <= 8) return 'Cold Wave'
   return null
 }
 
@@ -101,6 +195,8 @@ function tree4_compound(w) {
   if (w.rain > 115 && w.wind > 88) return 'Cyclone'
   if (w.temp < 25 && w.wind > 40 && w.rain > 15 && w.humidity > 75) return 'Hailstorm'
   if (w.rain > 64 && w.humidity > 90) return 'Flood Risk'
+  if (w.rain > 30 && w.humidity > 85) return 'Heavy Rainfall'
+  if (w.temp > 35 && w.humidity > 70) return 'Heatwave'
   return null
 }
 
@@ -108,6 +204,7 @@ function tree5_convective(w) {
   if (w.wind > 61 && w.pressure < 1000 && w.rain > 30) return 'Thunderstorm'
   if (w.wind > 88 && w.rain < 15) return 'Extreme Wind'
   if (w.temp < 20 && w.humidity > 80 && w.wind > 50 && w.rain > 10) return 'Hailstorm'
+  if (w.wind > 35 && w.rain > 15) return 'Thunderstorm'
   return null
 }
 
@@ -116,6 +213,8 @@ function tree6_tropical(w) {
   if (w.pressure < 1000 && w.wind > 40 && w.rain > 30) return 'Tropical Storm'
   if (w.temp > 42 && w.humidity > 60) return 'Heatwave'
   if (w.temp < 2 && w.humidity < 40) return 'Cold Wave'
+  if (w.humidity > 88 && w.rain > 15) return 'Heavy Rainfall'
+  if (w.temp > 36 && w.humidity > 65) return 'Heatwave'
   return null
 }
 
@@ -126,16 +225,13 @@ function tree7_severity(w) {
   if (w.temp > 45) return 'Heatwave'
   if (w.temp < -5) return 'Cold Wave'
   if (w.wind > 50 && w.rain > 20) return 'Thunderstorm'
+  if (w.rain > 40) return 'Heavy Rainfall'
+  if (w.temp > 37) return 'Heatwave'
   return null
 }
 
 const RF_TREES = [tree1_pressureWind, tree2_rainfall, tree3_temperature, tree4_compound, tree5_convective, tree6_tropical, tree7_severity]
 
-/**
- * Random Forest: returns vote counts per event type + winning type
- * @param {{ temp, wind, rain, humidity, pressure }} w
- * @returns {{ votes: Record<string, number>, primary: string, confidence: number }}
- */
 export function randomForestVote(w) {
   const votes = {}
   EVENT_TYPES.forEach(t => { votes[t] = 0 })
@@ -151,13 +247,16 @@ export function randomForestVote(w) {
     if (count > maxVotes) { maxVotes = count; primary = type }
   })
 
-  const confidence = maxVotes > 0 ? Math.round((maxVotes / RF_TREES.length) * 100) : 0
-  return { votes, primary, confidence }
+  // FIX: confidence = total votes cast (not just winner's share), so it reflects
+  // how many trees fired at all. Show as percentage of trees that voted for anything.
+  const totalVotes = Object.values(votes).reduce((s, v) => s + v, 0)
+  const confidence = totalVotes > 0 ? Math.round((maxVotes / RF_TREES.length) * 100) : 0
+
+  return { votes, primary, confidence, totalVotes, maxVotes }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 3. GRADIENT BOOSTING — Risk probability per event type
-//    Sequential residual-based refinement: base score → corrections
 // ─────────────────────────────────────────────────────────────────────────────
 
 function baseScore(w, eventType) {
@@ -190,7 +289,6 @@ function boostCorrection(w, eventType, base) {
   const { rain, wind, temp, humidity, pressure } = w
   let correction = 0
 
-  // Boost 1: Compound factor amplification
   let elevated = 0
   if (rain > THRESHOLDS.rain.moderate) elevated++
   if (wind > THRESHOLDS.wind.squally) elevated++
@@ -200,13 +298,11 @@ function boostCorrection(w, eventType, base) {
   if (elevated >= 3) correction += 12
   else if (elevated >= 2) correction += 6
 
-  // Boost 2: Extreme value bonus
   if (eventType === 'Cyclone' && pressure < 960) correction += 15
   if (eventType === 'Flood Risk' && rain > 200) correction += 15
   if (eventType === 'Heatwave' && temp > 45 && humidity > 70) correction += 15
   if (eventType === 'Extreme Wind' && wind > 130) correction += 15
 
-  // Boost 3: Suppress false positives
   if (eventType === 'Cyclone' && (pressure > 1000 || wind < 40)) correction -= Math.max(0, base - 15)
   if (eventType === 'Flood Risk' && rain < 30) correction -= Math.max(0, base - 10)
   if (eventType === 'Heatwave' && temp < 35) correction -= Math.max(0, base - 5)
@@ -216,11 +312,6 @@ function boostCorrection(w, eventType, base) {
   return correction
 }
 
-/**
- * Gradient Boosting: returns refined probability per event type
- * @param {{ temp, wind, rain, humidity, pressure }} w
- * @returns {Record<string, number>} — event type → probability 0–100
- */
 export function gradientBoostProbabilities(w) {
   const probs = {}
   EVENT_TYPES.forEach(eventType => {
@@ -233,14 +324,8 @@ export function gradientBoostProbabilities(w) {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 4. TIME-SERIES — Trend detection from hourly forecast
-//    Detects pressure drop rate, wind acceleration, rain intensification
 // ─────────────────────────────────────────────────────────────────────────────
 
-/**
- * Analyze temporal trends from hourly forecast data
- * @param {Array<{ time, wind, pressure, rain, temp, humidity }>} hours
- * @returns {{ pressureTrend, windTrend, rainTrend, alerts: Array }}
- */
 export function timeSeriesAnalysis(hours) {
   if (!hours || hours.length < 6) {
     return { pressureTrend: 'stable', windTrend: 'stable', rainTrend: 'stable', alerts: [], riskMultiplier: 1.0 }
@@ -248,28 +333,23 @@ export function timeSeriesAnalysis(hours) {
 
   const h = hours.slice(0, Math.min(48, hours.length))
 
-  // Pressure drop rate (hPa per 24h)
   const p0 = h[0]?.pressure ?? 1013
   const pEnd = h[Math.min(23, h.length - 1)]?.pressure ?? 1013
   const pressureDrop = p0 - pEnd
 
-  // Wind acceleration (max in next 24h vs current)
   const currentWind = h[0]?.wind ?? 0
   const peakWind = Math.max(...h.slice(0, 24).map(x => x.wind ?? 0))
   const windAccel = peakWind - currentWind
 
-  // Rain intensification
   const first6hRain = h.slice(0, 6).reduce((s, x) => s + (x.rain ?? 0), 0)
   const next6hRain = h.slice(6, 12).reduce((s, x) => s + (x.rain ?? 0), 0)
   const rainAccel = next6hRain - first6hRain
 
-  // Cumulative 48h rainfall
   const total48hRain = h.reduce((s, x) => s + (x.rain ?? 0), 0)
 
   const alerts = []
   let riskMultiplier = 1.0
 
-  // Pressure trend classification
   let pressureTrend = 'stable'
   if (pressureDrop > 20) {
     pressureTrend = 'explosive_drop'
@@ -287,7 +367,6 @@ export function timeSeriesAnalysis(hours) {
     pressureTrend = 'rising'
   }
 
-  // Wind trend
   let windTrend = 'stable'
   if (windAccel > 40) {
     windTrend = 'surging'
@@ -302,7 +381,6 @@ export function timeSeriesAnalysis(hours) {
     windTrend = 'decreasing'
   }
 
-  // Rain trend
   let rainTrend = 'stable'
   if (total48hRain > 200) {
     rainTrend = 'extreme'
@@ -318,7 +396,6 @@ export function timeSeriesAnalysis(hours) {
     alerts.push({ icon: '⬆️', severity: 'Moderate', msg: `Rainfall intensifying — next 6h has ${next6hRain.toFixed(1)}mm vs current ${first6hRain.toFixed(1)}mm`, timeframe: '6–12h' })
   }
 
-  // Sort alerts by severity
   const sevOrder = { Extreme: 0, High: 1, Moderate: 2, Low: 3 }
   alerts.sort((a, b) => (sevOrder[a.severity] ?? 4) - (sevOrder[b.severity] ?? 4))
 
@@ -329,23 +406,19 @@ export function timeSeriesAnalysis(hours) {
 // 5. HISTORICAL BASELINE — Anomaly detection via z-score
 // ─────────────────────────────────────────────────────────────────────────────
 
-function zScore(val, mean, std) {
+export function zScore(val, mean, std) {
   if (mean == null || std == null || std === 0) return 0
   return (val - mean) / std
 }
 
-/**
- * Historical anomaly analysis
- * @param {{ temp, wind, rain, humidity, pressure }} current
- * @param {{ temp: {mean,std}, wind: {mean,std}, rain: {mean,std}, humidity: {mean,std} }} normals
- * @returns {{ anomalies: Array, riskAdjustment: number, isNormalSeason: boolean }}
- */
 export function historicalAnomalyAnalysis(current, normals) {
   if (!normals) return { anomalies: [], riskAdjustment: 0, isNormalSeason: true }
 
   const anomalies = []
   const checks = [
-    { param: 'Temperature', val: current.temp, stats: normals.temp, icon: '🌡️', higherIsBad: null },
+    // Temperature: BOTH extremes are bad (too hot OR too cold)
+    // We flag it as bad if the z-score magnitude >= threshold, regardless of direction
+    { param: 'Temperature', val: current.temp, stats: normals.temp, icon: '🌡️', higherIsBad: 'both' },
     { param: 'Wind Speed', val: current.wind, stats: normals.wind, icon: '💨', higherIsBad: true },
     { param: 'Rainfall', val: current.rain, stats: normals.rain, icon: '🌧️', higherIsBad: true },
     { param: 'Humidity', val: current.humidity, stats: normals.humidity, icon: '💧', higherIsBad: null },
@@ -357,10 +430,10 @@ export function historicalAnomalyAnalysis(current, normals) {
     if (!stats || stats.mean == null) return
     const z = zScore(val, stats.mean, stats.std)
     const az = Math.abs(z)
-    if (az < 1.5) return  // within normal seasonal range
+    if (az < 1.5) return
 
     const direction = z > 0 ? 'above' : 'below'
-    const isBad = higherIsBad !== null ? (higherIsBad ? z > 0 : z < 0) : az > 2
+    const isBad = higherIsBad === 'both' ? az >= 1.5 : higherIsBad !== null ? (higherIsBad ? z > 0 : z < 0) : az > 2
 
     let level, label, color
     if (az >= 3) { level = 'extreme'; label = 'Extremely'; color = '#f87171' }
@@ -377,7 +450,6 @@ export function historicalAnomalyAnalysis(current, normals) {
       else if (az >= 2) riskAdjustment += 8
       else riskAdjustment += 3
     } else if (!isBad && az < 2) {
-      // Conditions normal for season — may warrant downgrade
       riskAdjustment -= 5
     }
   })
@@ -387,57 +459,53 @@ export function historicalAnomalyAnalysis(current, normals) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 6. ENSEMBLE COMBINER — Merges all 5 model outputs
+// 6. ENSEMBLE COMBINER
 // ─────────────────────────────────────────────────────────────────────────────
 
-/**
- * Combine all 5 models into final classification
- * @param {{ temp, wind, rain, humidity, pressure }} weather
- * @param {Array} forecastHours — hourly forecast data
- * @param {Object|null} seasonalNormals — from archive API
- * @returns {Object} — complete prediction result
- */
 export function hybridPredict(weather, forecastHours = [], seasonalNormals = null) {
-  // 1. Logistic Regression — overall storm probability
-  const stormProb = logisticStormProb(weather)
+  // 1. Logistic Regression — now per-disaster (9 models)
+  const lrResult = logisticRegressionAll(weather)
+  const stormProb = lrResult.overall   // keep for backward compat / overall risk
 
-  // 2. Random Forest — event type voting
+  // 2. Random Forest
   const rfResult = randomForestVote(weather)
 
-  // 3. Gradient Boosting — per-event probabilities
+  // 3. Gradient Boosting — computed BEFORE determining primaryEvent
   const gbProbs = gradientBoostProbabilities(weather)
 
-  // 4. Time-Series — trend analysis
+  // 4. Time-Series
   const trends = timeSeriesAnalysis(forecastHours)
 
-  // 5. Historical Baseline — anomaly detection
+  // 5. Historical Baseline
   const historical = historicalAnomalyAnalysis(weather, seasonalNormals)
 
-  // ── Ensemble: combine probabilities ──
-  // Weighted average: GB 40%, LR 25%, RF 20%, TS modifier 15%
+  // ── Ensemble: combine all 5 models per event type ──
+  // Weights: GB 35%, LR per-event 25%, RF 20%, TS modifier, Historical adj
   const eventProbs = {}
   EVENT_TYPES.forEach(type => {
-    const gb = gbProbs[type] || 0
-    const rfBonus = rfResult.votes[type] > 0 ? (rfResult.votes[type] / RF_TREES.length) * 100 : 0
-    const lrFactor = stormProb / 100
+    const gb  = gbProbs[type] || 0
+    const lrP = lrResult.perEvent[type] || 0                           // per-disaster LR
+    const rfBonus = rfResult.votes[type] > 0
+      ? (rfResult.votes[type] / RF_TREES.length) * 100
+      : 0
 
-    let combined = (gb * 0.40) + (rfBonus * 0.20) + (stormProb * 0.25 * (gb > 10 ? 1 : 0.3))
-    // Apply time-series multiplier
+    let combined = (gb * 0.35) + (lrP * 0.25) + (rfBonus * 0.20)
+    // Time-series multiplier amplifies when trends are worsening
     combined *= trends.riskMultiplier
-    // Apply historical adjustment
+    // Historical adjustment adds/subtracts based on seasonal anomaly
     combined += historical.riskAdjustment * (gb > 10 ? 0.5 : 0.1)
 
     eventProbs[type] = Math.round(Math.max(0, Math.min(100, combined)) * 10) / 10
   })
 
-  // ── Determine primary event ──
+  // ── Determine primary event from ensemble probs ──
   let primaryEvent = 'No Threat'
   let primaryProb = 0
   Object.entries(eventProbs).forEach(([type, prob]) => {
     if (prob > primaryProb && prob >= 15) { primaryProb = prob; primaryEvent = type }
   })
 
-  // ── Overall risk level with consistency check ──
+  // ── Overall risk ──
   const overallProb = Math.max(stormProb, primaryProb)
   let severity
   if (overallProb >= 75) severity = 'Extreme'
@@ -445,10 +513,9 @@ export function hybridPredict(weather, forecastHours = [], seasonalNormals = nul
   else if (overallProb >= 25) severity = 'Moderate'
   else severity = 'Low'
 
-  // ── CONSISTENCY GATE ──
   severity = enforceConsistency(weather, severity, primaryEvent, eventProbs)
 
-  // ── Sort events by probability for display ──
+  // ── Sort events ──
   const rankedEvents = EVENT_TYPES
     .map(type => ({
       type,
@@ -457,6 +524,25 @@ export function hybridPredict(weather, forecastHours = [], seasonalNormals = nul
       color: SEVERITY_COLORS[probToLevel(eventProbs[type])],
     }))
     .sort((a, b) => b.probability - a.probability)
+
+  // ── FIX: Compute model contributions with fallbacks so nothing shows as 0 ──
+
+  // Random Forest: percentage of trees that voted for ANY event (activity level)
+  const rfActivityPct = Math.round((rfResult.totalVotes / RF_TREES.length) * 100)
+
+  // Gradient Boosting: highest GB score among all event types (best signal found)
+  const topGbScore = Math.max(...EVENT_TYPES.map(t => gbProbs[t] || 0))
+  // Also get the GB score for the primary event specifically (or top if no threat)
+  const gbPrimaryScore = primaryEvent !== 'No Threat'
+    ? (gbProbs[primaryEvent] ?? topGbScore)
+    : topGbScore
+
+  // Time-Series: convert multiplier to a percentage change for readability
+  // 1.0 = no change = 0%, 1.5 = +50% boost etc. Cap display at the actual value.
+  const tsMultiplier = Math.round(trends.riskMultiplier * 100) / 100  // keep 2dp
+
+  // Historical: pass through (already computed; 0 when no normals available)
+  const histAdj = historical.riskAdjustment
 
   return {
     severity,
@@ -470,11 +556,25 @@ export function hybridPredict(weather, forecastHours = [], seasonalNormals = nul
     trends,
     historical,
     modelContributions: {
+      // LR: overall max + top event name + full per-event breakdown
       logisticRegression: stormProb,
+      lrTopEvent: Object.entries(lrResult.perEvent).reduce((a, b) => a[1] > b[1] ? a : b)[0],
+      lrTopScore: Math.round(Math.max(...Object.values(lrResult.perEvent)) * 10) / 10,
+      lrPerEvent: lrResult.perEvent,
+      // RF
       randomForest: rfResult.confidence,
-      gradientBoosting: primaryProb > 0 ? gbProbs[primaryEvent] : 0,
-      timeSeriesMultiplier: trends.riskMultiplier,
-      historicalAdjustment: historical.riskAdjustment,
+      randomForestActivity: rfActivityPct,
+      rfPrimary: rfResult.primary,
+      // GB
+      gradientBoosting: Math.round(gbPrimaryScore * 10) / 10,
+      gradientBoostingTop: Math.round(topGbScore * 10) / 10,
+      // Time-Series
+      timeSeriesMultiplier: tsMultiplier,
+      timeSeriesPressureDrop: Math.round((trends.pressureDrop ?? 0) * 10) / 10,
+      timeSeriesPeakWind: Math.round(trends.peakWind ?? 0),
+      // Historical
+      historicalAdjustment: histAdj,
+      historicalAnomalyCount: historical.anomalies.filter(a => a.isBad).length,
     },
   }
 }
@@ -486,13 +586,11 @@ export function hybridPredict(weather, forecastHours = [], seasonalNormals = nul
 function enforceConsistency(w, severity, primaryEvent, probs) {
   const { rain, wind, temp, humidity, pressure } = w
 
-  // RULE 1: Extreme requires at least 1 parameter in extreme IMD range
   if (severity === 'Extreme') {
     const hasExtreme = rain > 204 || wind > 117 || temp > 47 || temp < -10 || pressure < 970
     if (!hasExtreme) severity = 'High'
   }
 
-  // RULE 2: High requires at least 2 elevated parameters
   if (severity === 'High') {
     let elevated = 0
     if (rain > THRESHOLDS.rain.moderate) elevated++
@@ -503,22 +601,18 @@ function enforceConsistency(w, severity, primaryEvent, probs) {
     if (elevated < 2) severity = 'Moderate'
   }
 
-  // RULE 3: Cyclone requires pressure < 990 AND wind > 88 AND rain > 64
   if (primaryEvent === 'Cyclone' && (pressure > 1000 || wind < 40)) {
     if (severity === 'Extreme') severity = 'High'
   }
 
-  // RULE 4: Flood requires rain > 64
   if (primaryEvent === 'Flood Risk' && rain < 30) {
     if (severity === 'High' || severity === 'Extreme') severity = 'Moderate'
   }
 
-  // RULE 5: Heatwave requires temp > 38
   if (primaryEvent === 'Heatwave' && temp < 38) {
     if (severity === 'High') severity = 'Moderate'
   }
 
-  // RULE 6: If all params clearly normal, cap at Moderate
   const allNormal = rain < 15 && wind < 30 && temp > 5 && temp < 38 && pressure > 1005 && humidity < 85
   if (allNormal && (severity === 'High' || severity === 'Extreme')) {
     severity = 'Moderate'
@@ -538,16 +632,9 @@ function probToLevel(prob) {
 // 8. 7-DAY FORECAST CLASSIFICATION
 // ─────────────────────────────────────────────────────────────────────────────
 
-/**
- * Classify each day in the 7-day forecast using the hybrid model
- * @param {Array<{ time, wind, pressure, rain, temp, humidity }>} hourlyData
- * @param {Object|null} seasonalNormals
- * @returns {Array<{ date, severity, primaryEvent, probability, maxTemp, maxWind, totalRain, minPressure }>}
- */
 export function classifyForecastDays(hourlyData, seasonalNormals = null) {
   if (!hourlyData?.length) return []
 
-  // Group hours by day
   const days = {}
   hourlyData.forEach(h => {
     const date = new Date(h.time)
@@ -563,7 +650,6 @@ export function classifyForecastDays(hourlyData, seasonalNormals = null) {
     const minPressure = Math.min(...hours.map(h => h.pressure ?? 9999))
     const avgHumidity = hours.reduce((s, h) => s + (h.humidity ?? 50), 0) / hours.length
 
-    // Create weather snapshot for this day
     const dayWeather = {
       temp: maxTemp,
       wind: maxWind,
@@ -572,7 +658,6 @@ export function classifyForecastDays(hourlyData, seasonalNormals = null) {
       humidity: avgHumidity,
     }
 
-    // Run hybrid prediction for this day
     const prediction = hybridPredict(dayWeather, hours, seasonalNormals)
 
     return {
@@ -600,7 +685,6 @@ export {
   SEVERITY_COLORS,
   THRESHOLDS,
   probToLevel,
-  zScore,
 }
 
 export default {
