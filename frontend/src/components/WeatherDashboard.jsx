@@ -96,37 +96,44 @@ function seasonalSeverity(current, normals, baseSeverity, primaryEvent = '') {
   let finalSev = baseSeverity
   let overridden = false
 
-  const hasExtreme = anomalies.some(a => a.level === 'extreme' && a.isBad)
-  const hasHigh = anomalies.some(a => a.level === 'high' && a.isBad)
+  // Only count anomalies that are BOTH statistically extreme AND in absolute danger zone
+  // (historicalAnomalyAnalysis already enforces this via isBad logic)
+  const badAnomalies = anomalies.filter(a => a.isBad)
+  const hasExtremeBad = badAnomalies.some(a => a.level === 'extreme')
+  const hasHighBad    = badAnomalies.some(a => a.level === 'high')
 
-  if (hasExtreme && order.indexOf(baseSeverity) < order.indexOf('High')) {
+  // UPGRADE: only when anomaly is genuinely dangerous
+  if (hasExtremeBad && order.indexOf(baseSeverity) < order.indexOf('High')) {
     finalSev = 'High'; overridden = true
   }
-  if (hasHigh && order.indexOf(baseSeverity) < order.indexOf('Moderate')) {
+  if (hasHighBad && order.indexOf(baseSeverity) < order.indexOf('Moderate')) {
     finalSev = 'Moderate'; overridden = true
   }
 
-  // Downgrade only when conditions are truly seasonal-normal.
-  // GUARD: never downgrade when primary event is temperature-driven
-  // or when temp is already in a danger zone (cold wave / heatwave range)
+  // DOWNGRADE: only when ALL of these are true:
+  //   1. No bad anomalies at all
+  //   2. Rain is not elevated above seasonal mean
+  //   3. Primary event is not temperature-driven
+  //   4. Temperature is not in absolute danger zone
+  //   5. Base severity is not already Low
   const tempDrivenEvents = ['Cold Wave', 'Heatwave', 'Heat Stress', 'Cold Stress']
-  const isTempDriven = tempDrivenEvents.some(e => primaryEvent.includes(e.split(' ')[0]))
-  const tempInDangerZone = current.temp > 38 || current.temp < 5
+  const isTempDriven   = tempDrivenEvents.some(e => primaryEvent.includes(e.split(' ')[0]))
+  const tempInDanger   = current.temp > 38 || current.temp < 5
+  const rainElevated   = current.rain > (normals.rain.mean ?? 0) * 1.5 && current.rain > 5
 
   const shouldDowngrade =
-    !anomalies.filter(a => a.isBad).length &&
-    baseSeverity !== 'Low' &&
-    current.rain < (normals.rain.mean ?? 0) * 1.5 &&
-    !isTempDriven &&
-    !tempInDangerZone
+    badAnomalies.length === 0 &&
+    baseSeverity !== 'Low'    &&
+    !rainElevated             &&
+    !isTempDriven             &&
+    !tempInDanger
 
   if (shouldDowngrade) {
     const idx = order.indexOf(baseSeverity)
     if (idx > 0) { finalSev = order[idx - 1]; overridden = true }
   }
 
-  // Convert anomalies to display format
-  const displayAnomalies = anomalies.filter(a => a.isBad).map(a => ({
+  const displayAnomalies = badAnomalies.map(a => ({
     param: a.param,
     z: a.z,
     msg: a.msg,

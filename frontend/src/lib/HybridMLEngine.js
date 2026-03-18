@@ -416,12 +416,16 @@ export function historicalAnomalyAnalysis(current, normals) {
 
   const anomalies = []
   const checks = [
-    // Temperature: BOTH extremes are bad (too hot OR too cold)
-    // We flag it as bad if the z-score magnitude >= threshold, regardless of direction
+    // Temperature: only flag as BAD if it also crosses an absolute danger threshold
+    // Statistical anomaly alone is not enough — 31°C in Chennai being 3σ above
+    // March average is NOT dangerous, it's just a warm day
     { param: 'Temperature', val: current.temp, stats: normals.temp, icon: '🌡️', higherIsBad: 'both' },
+    // Wind: higher is worse
     { param: 'Wind Speed', val: current.wind, stats: normals.wind, icon: '💨', higherIsBad: true },
+    // Rainfall: higher is worse
     { param: 'Rainfall', val: current.rain, stats: normals.rain, icon: '🌧️', higherIsBad: true },
-    { param: 'Humidity', val: current.humidity, stats: normals.humidity, icon: '💧', higherIsBad: null },
+    // Humidity: ONLY high humidity is bad (low humidity is comfortable, not a hazard)
+    { param: 'Humidity', val: current.humidity, stats: normals.humidity, icon: '💧', higherIsBad: true },
   ]
 
   let riskAdjustment = 0
@@ -433,7 +437,25 @@ export function historicalAnomalyAnalysis(current, normals) {
     if (az < 1.5) return
 
     const direction = z > 0 ? 'above' : 'below'
-    const isBad = higherIsBad === 'both' ? az >= 1.5 : higherIsBad !== null ? (higherIsBad ? z > 0 : z < 0) : az > 2
+
+    // isBad logic with ABSOLUTE SAFETY CHECKS
+    // Statistical anomaly only counts as "bad" if absolute value is also dangerous
+    let isBad = false
+    if (param === 'Temperature') {
+      // Temperature anomaly is bad ONLY if it also crosses absolute danger zone
+      // Hot: statistically high AND actually hot (>38°C)
+      // Cold: statistically low AND actually cold (<5°C)
+      const absolutelyHot  = current.temp > 38
+      const absolutelyCold = current.temp < 5
+      isBad = (z > 0 && absolutelyHot) || (z < 0 && absolutelyCold)
+    } else if (param === 'Humidity') {
+      // Humidity only dangerous when HIGH (causes heat stress)
+      // Low humidity is NOT a weather hazard on its own
+      isBad = z > 0 && current.humidity > 85
+    } else {
+      // Wind and Rain: higher than normal is always worse
+      isBad = higherIsBad ? z > 0 : z < 0
+    }
 
     let level, label, color
     if (az >= 3) { level = 'extreme'; label = 'Extremely'; color = '#f87171' }
@@ -449,9 +471,8 @@ export function historicalAnomalyAnalysis(current, normals) {
       if (az >= 3) riskAdjustment += 15
       else if (az >= 2) riskAdjustment += 8
       else riskAdjustment += 3
-    } else if (!isBad && az < 2) {
-      riskAdjustment -= 5
     }
+    // No downgrade adjustment — leave that to seasonalSeverity
   })
 
   const isNormalSeason = anomalies.filter(a => a.isBad).length === 0
