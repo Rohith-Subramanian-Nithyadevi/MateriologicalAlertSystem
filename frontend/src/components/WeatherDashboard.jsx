@@ -273,6 +273,33 @@ export default function WeatherDashboard() {
     return () => clearInterval(iv)
   }, [runScan])
 
+  // ─── Build URL for /classifyML endpoint ──────────────────────────────────────
+  // Sends raw weather params + all ML probabilities to Haskell
+  // Haskell validates ML output against IMD physical ranges
+  function buildClassifyMLUrl(weather, mlPrediction) {
+    const ep = mlPrediction.eventProbabilities || {}
+    const params = new URLSearchParams({
+      // Raw weather
+      temp:     weather.temp,
+      rain:     weather.rain,
+      wind:     weather.wind,
+      humidity: weather.humidity,
+      pressure: weather.pressure,
+      // ML probabilities per event type
+      ml_thunderstorm:   ep['Thunderstorm']   ?? 0,
+      ml_cyclone:        ep['Cyclone']        ?? 0,
+      ml_tropical_storm: ep['Tropical Storm'] ?? 0,
+      ml_hailstorm:      ep['Hailstorm']      ?? 0,
+      ml_flood_risk:     ep['Flood Risk']     ?? 0,
+      ml_heatwave:       ep['Heatwave']       ?? 0,
+      ml_heavy_rainfall: ep['Heavy Rainfall'] ?? 0,
+      ml_extreme_wind:   ep['Extreme Wind']   ?? 0,
+      ml_cold_wave:      ep['Cold Wave']      ?? 0,
+      ml_overall:        mlPrediction.overallProbability ?? 0,
+    })
+    return `${BACKEND_URL}/classifyML?${params.toString()}`
+  }
+
   // ─── Main fetch ─────────────────────────────────────────────────────────────
 
   async function fetchWeather() {
@@ -353,15 +380,34 @@ export default function WeatherDashboard() {
       setSeverity(mlPrediction.severity)
       setDisasterType(mlPrediction.primaryEvent)
 
-      // Also call backend for classification context (non-blocking)
+      // Call /classifyML — sends ML probabilities TO Haskell for validation
+      // Haskell checks ML output against IMD physical ranges and returns
+      // a validated final classification. Falls back to old endpoint if unavailable.
       try {
-        const cr = await fetch(`${BACKEND_URL}/classifyWithHistory?temp=${temp}&rain=${rain}&wind=${wind}&humidity=${humidity}&pressure=${pressure}&avg_temp=${avgTemp}&avg_rain=${avgRain}&avg_wind=${avgWind}&avg_humidity=${avgHumidity}&avg_pressure=${avgPressure}`)
+        const mlUrl = buildClassifyMLUrl(weatherData, mlPrediction)
+        const cr = await fetch(mlUrl)
         if (cr.ok) {
           const cd = await cr.json()
           setReason(cd.reason || '')
-          // Backend can override severity if it has probability
-          if (cd.probability && cd.probability > mlPrediction.overallProbability) {
-            setSeverity(cd.severity || mlPrediction.severity)
+          // Haskell is now the final authority on severity
+          // It has already validated against both IMD ranges AND ML probabilities
+          if (cd.severity) {
+            setSeverity(cd.severity)
+          }
+          // Update disaster type if Haskell detected something different
+          if (cd.disasterType && cd.disasterType !== 'No Threat') {
+            setDisasterType(cd.disasterType)
+          }
+        } else {
+          // /classifyML failed — fall back to old classifyWithHistory
+          const fallbackUrl = `${BACKEND_URL}/classifyWithHistory?temp=${temp}&rain=${rain}&wind=${wind}&humidity=${humidity}&pressure=${pressure}&avg_temp=${avgTemp}&avg_rain=${avgRain}&avg_wind=${avgWind}&avg_humidity=${avgHumidity}&avg_pressure=${avgPressure}`
+          const fb = await fetch(fallbackUrl)
+          if (fb.ok) {
+            const fd = await fb.json()
+            setReason(fd.reason || '')
+            if (fd.probability && fd.probability > mlPrediction.overallProbability) {
+              setSeverity(fd.severity || mlPrediction.severity)
+            }
           }
         }
       } catch (_) {

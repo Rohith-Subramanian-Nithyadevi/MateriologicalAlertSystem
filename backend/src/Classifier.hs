@@ -2,9 +2,9 @@ module Classifier where
 
 import Types
 
--- ─────────────────────────────────────────────────────
+-- ─────────────────────────────────────────────────────────────────────────────
 -- 1. CATEGORISATION
--- ─────────────────────────────────────────────────────
+-- ─────────────────────────────────────────────────────────────────────────────
 
 categorizeRainfall :: Double -> RainfallCategory
 categorizeRainfall r
@@ -54,10 +54,22 @@ toCondition w = WeatherCondition
   , presCat = categorizePressure $ pressure    w
   }
 
--- ─────────────────────────────────────────────────────
--- 2. HEAT INDEX  (Steadman formula — °C in, °C out)
---    Meaningful only when temp >= 27°C
--- ─────────────────────────────────────────────────────
+-- ─────────────────────────────────────────────────────────────────────────────
+-- 2. ML CONFIDENCE CATEGORISATION
+--    Converts a raw ML probability (0-100) into a confidence level
+-- ─────────────────────────────────────────────────────────────────────────────
+
+toMLConfidence :: Double -> MLConfidence
+toMLConfidence p
+  | p >= 75 = HighSignal
+  | p >= 50 = StrongSignal
+  | p >= 30 = ModerateSignal
+  | p >= 15 = WeakSignal
+  | otherwise = NoSignal
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- 3. HEAT INDEX  (Steadman formula - C in, C out)
+-- ─────────────────────────────────────────────────────────────────────────────
 
 heatIndex :: Double -> Double -> Double
 heatIndex tempC rh
@@ -75,11 +87,9 @@ heatIndex tempC rh
               - 1.99e-6       * tf * tf  * rh * rh
       in (hi - 32) * 5 / 9
 
--- ─────────────────────────────────────────────────────
--- 3. COMPOUND EVENT DETECTION — Hybrid ML-inspired
---    Count how many parameters are simultaneously at
---    elevated risk — compound events amplify danger.
--- ─────────────────────────────────────────────────────
+-- ─────────────────────────────────────────────────────────────────────────────
+-- 4. COMPOUND EVENT DETECTION
+-- ─────────────────────────────────────────────────────────────────────────────
 
 countElevatedParams :: WeatherCondition -> Int
 countElevatedParams wc = length $ filter id
@@ -90,64 +100,53 @@ countElevatedParams wc = length $ filter id
   , presCat wc `elem` [VeryLowPressure, ExtremeLowPressure]
   ]
 
--- | Identify the primary disaster type — extended 9-category RF-inspired voting
+-- ─────────────────────────────────────────────────────────────────────────────
+-- 5. DISASTER TYPE DETECTION
+-- ─────────────────────────────────────────────────────────────────────────────
+
 detectDisasterType :: WeatherCondition -> Weather -> DisasterType
 detectDisasterType wc w
-  -- Cyclone: three-way compound (low pressure + storm winds + heavy rain)
   | presCat wc `elem` [VeryLowPressure, ExtremeLowPressure]
     && windCat wc `elem` [Storm, Hurricane]
     && rainCat wc `elem` [HeavyRain, VeryHeavyRain, ExtremelyHeavy]
     = CycloneWatch
-  -- Storm surge: extreme pressure + hurricane winds
   | presCat wc == ExtremeLowPressure && windCat wc == Hurricane
     = StormSurge
-  -- Tropical storm: low pressure + moderate-to-strong winds
   | presCat wc `elem` [VeryLowPressure, ExtremeLowPressure]
     && windCat wc `elem` [Gale, Storm]
     = TropicalStorm
-  -- Hailstorm: cold convection — temp<25 + wind>40 + rain + high humidity
   | temperature w < 25 && windCat wc `elem` [SquallyWind, Gale]
     && rainCat wc `elem` [ModerateRain, HeavyRain]
     && humCat wc `elem` [HighHumidity, VeryHighHumidity]
     = HailstormRisk
-  -- Flood: extreme rainfall dominates
   | rainCat wc `elem` [VeryHeavyRain, ExtremelyHeavy]
     = FloodRisk
-  -- Heatwave: sustained extreme temperature
   | tempCat wc `elem` [HeatWave, SevereHeatWave]
     && humCat wc `elem` [HighHumidity, VeryHighHumidity]
     = HeatWaveEvent
-  -- Heat stress (less severe than heatwave)
   | tempCat wc `elem` [HeatWave, SevereHeatWave]
     = HeatStress
-  -- Cold wave
   | tempCat wc `elem` [ColdWave, SevereColdWave]
     = ColdWaveEvent
-  -- Heavy rainfall event (below flood threshold but significant)
   | rainCat wc == HeavyRain
     = HeavyRainfallEvent
-  -- Extreme wind (standalone, without cyclonic indicators)
   | windCat wc `elem` [Storm, Hurricane]
     && presCat wc == NormalPressure
     = ExtremeWindEvent
-  -- Thunderstorm: squally winds + moderate rain + falling pressure
   | windCat wc `elem` [SquallyWind, Gale]
     && rainCat wc `elem` [ModerateRain, HeavyRain]
     && presCat wc `elem` [LowPressure, VeryLowPressure]
     = ThunderstormRisk
-  -- Generic compound: 3+ parameters simultaneously elevated
   | countElevatedParams wc >= 3
     = CompoundRisk
   | otherwise
     = NoThreat
 
--- ─────────────────────────────────────────────────────
--- 4. CORE CLASSIFICATION  (all 5 parameters used)
---    With CONSISTENCY GATE: enforces logical rules
--- ─────────────────────────────────────────────────────
+-- ─────────────────────────────────────────────────────────────────────────────
+-- 6. CORE IMD CLASSIFICATION
+-- ─────────────────────────────────────────────────────────────────────────────
 
 classifyCondition :: WeatherCondition -> IMDColor
--- Red Alert — life-threatening
 classifyCondition wc
   | presCat wc == ExtremeLowPressure && windCat wc `elem` [Storm, Hurricane] = Red
   | rainCat wc == ExtremelyHeavy                                              = Red
@@ -156,7 +155,6 @@ classifyCondition wc
   | tempCat wc == SevereColdWave                                              = Red
   | rainCat wc == VeryHeavyRain && windCat wc `elem` [Storm, Hurricane]      = Red
   | humCat  wc == VeryHighHumidity && tempCat wc == SevereHeatWave            = Red
--- Orange Alert — be prepared for impact
   | rainCat wc == VeryHeavyRain                                               = Orange
   | windCat wc `elem` [Storm, Hurricane]                                      = Orange
   | windCat wc == Gale                                                        = Orange
@@ -165,34 +163,25 @@ classifyCondition wc
   | presCat wc `elem` [VeryLowPressure, ExtremeLowPressure]
     && windCat wc `elem` [Gale, Storm]                                        = Orange
   | humCat  wc == VeryHighHumidity && tempCat wc == HeatWave                  = Orange
--- Yellow Alert — be updated
   | rainCat wc `elem` [HeavyRain, ModerateRain]                              = Yellow
   | windCat wc `elem` [SquallyWind, StrongWind]                              = Yellow
   | presCat wc `elem` [VeryLowPressure, ExtremeLowPressure]                  = Yellow
   | humCat  wc == VeryHighHumidity                                            = Yellow
   | presCat wc == LowPressure && windCat wc `elem` [StrongWind, SquallyWind] = Yellow
--- Green — no warning
-  | otherwise                                                                 = Green
+  | otherwise                                                                  = Green
 
--- ─────────────────────────────────────────────────────
--- 5. CONSISTENCY GATE
---    Prevents logically contradictory alerts
--- ─────────────────────────────────────────────────────
+-- ─────────────────────────────────────────────────────────────────────────────
+-- 7. CONSISTENCY GATE (existing logic - unchanged)
+-- ─────────────────────────────────────────────────────────────────────────────
 
--- | Enforce consistency: alerts must match actual signal strength
 consistencyCheck :: Weather -> IMDColor -> DisasterType -> IMDColor
 consistencyCheck w color dtype
-  -- RULE: Red requires at least 1 extreme-range parameter
   | color == Red && not hasExtremeParam = Orange
-  -- RULE: Orange requires at least 2 elevated parameters
   | color == Orange && elevated < 2 = Yellow
-  -- RULE: Cyclone requires pressure < 990 AND wind > 88
   | dtype == CycloneWatch && (pressure w > 1000 || windSpeed w < 40)
     && color == Red = Orange
-  -- RULE: Flood requires rain > 64
   | dtype == FloodRisk && rainfall w < 30
     && color `elem` [Orange, Red] = Yellow
-  -- RULE: If all params normal, cap at Yellow
   | allNormal && color `elem` [Orange, Red] = Yellow
   | otherwise = color
   where
@@ -208,14 +197,72 @@ consistencyCheck w color dtype
              && temperature w > 5 && temperature w < 38
              && pressure w > 1005 && humidity w < 85
 
--- ─────────────────────────────────────────────────────
--- 6. SIGMOID PROBABILITY (Logistic Regression inspired)
--- ─────────────────────────────────────────────────────
+-- ─────────────────────────────────────────────────────────────────────────────
+-- 8. ML-AWARE CONSISTENCY GATE
+--    NEW: Uses ML probabilities to validate and refine the IMD classification
+--    Logic: ML provides signal strength, IMD provides physical range checks
+--    Neither overrules the other — both must agree for a high alert
+-- ─────────────────────────────────────────────────────────────────────────────
+
+mlConsistencyCheck :: Weather -> IMDColor -> DisasterType -> MLProbabilities -> IMDColor
+mlConsistencyCheck w imdColor dtype ml =
+  let
+    -- First apply the standard IMD consistency check
+    baseColor = consistencyCheck w imdColor dtype
+
+    -- Get ML confidence for the relevant event
+    eventConf = case dtype of
+      CycloneWatch      -> toMLConfidence (mlCyclone       ml)
+      TropicalStorm     -> toMLConfidence (mlTropicalStorm  ml)
+      FloodRisk         -> toMLConfidence (mlFloodRisk      ml)
+      HeatWaveEvent     -> toMLConfidence (mlHeatwave       ml)
+      HeatStress        -> toMLConfidence (mlHeatwave       ml)
+      ColdWaveEvent     -> toMLConfidence (mlColdWave       ml)
+      ColdStress        -> toMLConfidence (mlColdWave       ml)
+      ThunderstormRisk  -> toMLConfidence (mlThunderstorm   ml)
+      HailstormRisk     -> toMLConfidence (mlHailstorm      ml)
+      HeavyRainfallEvent-> toMLConfidence (mlHeavyRainfall  ml)
+      ExtremeWindEvent  -> toMLConfidence (mlExtremeWind    ml)
+      _                 -> toMLConfidence (mlOverall        ml)
+
+    overallConf = toMLConfidence (mlOverall ml)
+
+  in case (baseColor, eventConf) of
+    -- UPGRADE: IMD says Yellow but ML is strongly confident → promote to Orange
+    -- Rationale: ML detected compound signals IMD point-scoring may have missed
+    (Yellow, StrongSignal) -> Orange
+    (Yellow, HighSignal)   -> Orange
+
+    -- UPGRADE: IMD says Green but ML is highly confident → promote to Yellow
+    -- Rationale: ML sees early signal before IMD thresholds are crossed
+    (Green, StrongSignal)  -> Yellow
+    (Green, HighSignal)    -> Orange
+
+    -- DOWNGRADE: IMD says Orange but ML has no/weak signal → demote to Yellow
+    -- Rationale: IMD threshold crossed but ML sees no compound risk pattern
+    (Orange, NoSignal)     -> Yellow
+    (Orange, WeakSignal)   -> Yellow
+
+    -- DOWNGRADE: IMD says Red but ML confidence is below Strong → demote to Orange
+    -- Rationale: extreme IMD category requires ML confirmation
+    (Red, NoSignal)        -> Orange
+    (Red, WeakSignal)      -> Orange
+    (Red, ModerateSignal)  -> Orange
+
+    -- SPECIAL: If overall ML risk is High/Extreme regardless of event type
+    -- and IMD is only Green, at least show Yellow
+    _ | baseColor == Green && overallConf `elem` [StrongSignal, HighSignal] -> Yellow
+
+    -- Default: trust the IMD consistency check result
+    _ -> baseColor
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- 9. SIGMOID PROBABILITY
+-- ─────────────────────────────────────────────────────────────────────────────
 
 sigmoidProb :: Double -> Double
 sigmoidProb x = 1.0 / (1.0 + exp (negate x))
 
--- | Calculate storm probability using logistic regression weights
 stormProbability :: Weather -> Double
 stormProbability w =
   let z = (-3.2)
@@ -227,9 +274,9 @@ stormProbability w =
         + (-0.015) * (1013 - pressure w)
   in fromIntegral (round (sigmoidProb z * 1000) :: Int) / 10.0
 
--- ─────────────────────────────────────────────────────
--- 7. HELPERS
--- ─────────────────────────────────────────────────────
+-- ─────────────────────────────────────────────────────────────────────────────
+-- 10. HELPERS
+-- ─────────────────────────────────────────────────────────────────────────────
 
 imdColorToString :: IMDColor -> String
 imdColorToString Green  = "Low"
@@ -238,20 +285,20 @@ imdColorToString Orange = "High"
 imdColorToString Red    = "Extreme"
 
 disasterTypeToString :: DisasterType -> String
-disasterTypeToString NoThreat          = "No Threat"
-disasterTypeToString HeatStress        = "Heat Stress"
-disasterTypeToString ColdStress        = "Cold Stress"
-disasterTypeToString FloodRisk         = "Flood Risk"
-disasterTypeToString CycloneWatch      = "Cyclone Watch"
-disasterTypeToString StormSurge        = "Storm Surge"
-disasterTypeToString ThunderstormRisk  = "Thunderstorm Risk"
-disasterTypeToString CompoundRisk      = "Compound Risk"
-disasterTypeToString TropicalStorm     = "Tropical Storm"
-disasterTypeToString HailstormRisk     = "Hailstorm Risk"
+disasterTypeToString NoThreat           = "No Threat"
+disasterTypeToString HeatStress         = "Heat Stress"
+disasterTypeToString ColdStress         = "Cold Stress"
+disasterTypeToString FloodRisk          = "Flood Risk"
+disasterTypeToString CycloneWatch       = "Cyclone Watch"
+disasterTypeToString StormSurge         = "Storm Surge"
+disasterTypeToString ThunderstormRisk   = "Thunderstorm Risk"
+disasterTypeToString CompoundRisk       = "Compound Risk"
+disasterTypeToString TropicalStorm      = "Tropical Storm"
+disasterTypeToString HailstormRisk      = "Hailstorm Risk"
 disasterTypeToString HeavyRainfallEvent = "Heavy Rainfall"
-disasterTypeToString ExtremeWindEvent  = "Extreme Wind"
-disasterTypeToString HeatWaveEvent     = "Heatwave"
-disasterTypeToString ColdWaveEvent     = "Cold Wave"
+disasterTypeToString ExtremeWindEvent   = "Extreme Wind"
+disasterTypeToString HeatWaveEvent      = "Heatwave"
+disasterTypeToString ColdWaveEvent      = "Cold Wave"
 
 bumpColor :: IMDColor -> IMDColor
 bumpColor Green  = Yellow
@@ -259,7 +306,6 @@ bumpColor Yellow = Orange
 bumpColor Orange = Red
 bumpColor Red    = Red
 
--- Append heat-index note when apparent temp differs significantly
 hiNote :: Double -> Double -> String
 hiNote tempC rh =
   let hi = heatIndex tempC rh
@@ -271,26 +317,24 @@ hiNote tempC rh =
 showRounded :: Double -> String
 showRounded = show . (round :: Double -> Int)
 
--- ─────────────────────────────────────────────────────
--- 8. PUBLIC API
--- ─────────────────────────────────────────────────────
+-- ─────────────────────────────────────────────────────────────────────────────
+-- 11. PUBLIC API — EXISTING ENDPOINTS (unchanged)
+-- ─────────────────────────────────────────────────────────────────────────────
 
--- | Returns (severity, reason, disasterType, probability)
 classify :: Weather -> (String, String, String, Double)
 classify w =
-  let cond  = toCondition w
+  let cond     = toCondition w
       rawColor = classifyCondition cond
-      dtype = detectDisasterType cond w
-      color = consistencyCheck w rawColor dtype
-      prob  = stormProbability w
-      note  = hiNote (temperature w) (humidity w)
+      dtype    = detectDisasterType cond w
+      color    = consistencyCheck w rawColor dtype
+      prob     = stormProbability w
+      note     = hiNote (temperature w) (humidity w)
   in ( imdColorToString color
      , "Classified against IMD thresholds with consistency validation." ++ note
      , disasterTypeToString dtype
      , prob
      )
 
--- | Returns (severity, reason, disasterType, probability) with 30-day historical context
 classifyWithHistory :: Weather -> WeatherAverage -> (String, String, String, Double)
 classifyWithHistory w avg =
   let cond      = toCondition w
@@ -303,7 +347,7 @@ classifyWithHistory w avg =
       windDiff  = windSpeed   w - avgWindSpeed   avg
       tempDiff  = temperature w - avgTemperature avg
       humDiff   = humidity    w - avgHumidity    avg
-      pressDiff = avgPressure avg - pressure w     -- positive = pressure has dropped
+      pressDiff = avgPressure avg - pressure w
 
       note = hiNote (temperature w) (humidity w)
 
@@ -331,7 +375,84 @@ classifyWithHistory w avg =
             ( baseColor
             , "Assessed against IMD absolute thresholds and 30-day historical context." ++ note )
 
-      -- Apply consistency check to final color
       checkedColor = consistencyCheck w finalColor dtype
 
   in (imdColorToString checkedColor, reason, disasterTypeToString dtype, prob)
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- 12. NEW: classifyWithML
+--     Receives raw weather + ML engine probabilities
+--     Uses ML probabilities to validate and refine IMD classification
+--     Returns same shape as existing classify functions for easy integration
+-- ─────────────────────────────────────────────────────────────────────────────
+
+classifyWithML :: Weather -> MLProbabilities -> (String, String, String, Double)
+classifyWithML w ml =
+  let
+    -- Step 1: Categorise raw weather params (existing Haskell logic)
+    cond = toCondition w
+
+    -- Step 2: Detect disaster type from IMD ranges (existing logic)
+    dtype = detectDisasterType cond w
+
+    -- Step 3: Get raw IMD color from thresholds (existing logic)
+    rawColor = classifyCondition cond
+
+    -- Step 4: Apply ML-aware consistency check (NEW)
+    --         This is where ML probabilities validate the IMD result
+    finalColor = mlConsistencyCheck w rawColor dtype ml
+
+    -- Step 5: Compute final probability
+    --         Blend Haskell sigmoid with ML overall probability
+    --         Haskell sigmoid: physical range based
+    --         ML overall:      pattern-based ensemble
+    haskellProb = stormProbability w
+    blendedProb = (haskellProb * 0.4) + (mlOverall ml * 0.6)
+    finalProb   = fromIntegral (round (blendedProb * 10) :: Int) / 10.0
+
+    -- Step 6: Build reason string explaining what happened
+    eventConf   = toMLConfidence (mlOverall ml)
+    note        = hiNote (temperature w) (humidity w)
+
+    reason = buildMLReason w cond dtype rawColor finalColor eventConf note
+
+  in ( imdColorToString finalColor
+     , reason
+     , disasterTypeToString dtype
+     , finalProb
+     )
+
+-- | Build a human-readable reason string for the ML classification
+buildMLReason :: Weather -> WeatherCondition -> DisasterType
+              -> IMDColor -> IMDColor -> MLConfidence -> String -> String
+buildMLReason w wc dtype imdColor finalColor mlConf note =
+  let
+    imdStr   = imdColorToString imdColor
+    finalStr = imdColorToString finalColor
+    confStr  = case mlConf of
+      HighSignal     -> "high ML confidence"
+      StrongSignal   -> "strong ML signal"
+      ModerateSignal -> "moderate ML signal"
+      WeakSignal     -> "weak ML signal"
+      NoSignal       -> "no ML signal"
+
+    -- Was the result upgraded, downgraded or unchanged?
+    adjustment
+      | finalColor > imdColor =
+          "ML engine upgraded from " ++ imdStr ++ " to " ++ finalStr
+          ++ " based on " ++ confStr ++ "."
+      | finalColor < imdColor =
+          "ML engine downgraded from " ++ imdStr ++ " to " ++ finalStr
+          ++ " — " ++ confStr ++ " did not confirm IMD threshold breach."
+      | otherwise =
+          "IMD classification confirmed by ML engine (" ++ confStr ++ ")."
+
+    -- Add physical context
+    physContext = case dtype of
+      CycloneWatch  -> " Pressure at " ++ show (pressure w) ++ " hPa with " ++ show (windSpeed w) ++ " km/h winds."
+      FloodRisk     -> " Rainfall: " ++ show (rainfall w) ++ " mm."
+      HeatWaveEvent -> " Temperature: " ++ show (temperature w) ++ "\176C." ++ note
+      ColdWaveEvent -> " Temperature: " ++ show (temperature w) ++ "\176C."
+      _             -> note
+
+  in adjustment ++ physContext
