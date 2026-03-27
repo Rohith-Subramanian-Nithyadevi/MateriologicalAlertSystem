@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { hybridPredict, classifyForecastDays, historicalAnomalyAnalysis } from '../lib/HybridMLEngine'
+import { hybridPredict, classifyForecastDays, historicalAnomalyAnalysis } from '../lib/HybridRuleEngine'
 import CurrentConditions from './CurrentConditions'
 import StormRiskLevel from './StormRiskLevel'
 import ForecastStrip from './ForecastStrip'
@@ -260,7 +260,7 @@ export default function WeatherDashboard() {
           humidity: c.relative_humidity_2m ?? 50,
           pressure: c.pressure_msl ?? 1013,
         }
-        // Use hybrid ML engine instead of backend for global scan
+        // Use hybrid rule engine instead of backend for global scan
         const result = hybridPredict(w)
         if (result.severity !== 'Low') {
           alerts.push({ name: loc.name, country: loc.country, ...w, severity: result.severity, disasterType: result.primaryEvent, probability: result.overallProbability })
@@ -280,11 +280,11 @@ export default function WeatherDashboard() {
     return () => clearInterval(iv)
   }, [runScan])
 
-  // ─── Build URL for /classifyML endpoint ──────────────────────────────────────
-  // Sends raw weather params + all ML probabilities to Haskell
-  // Haskell validates ML output against IMD physical ranges
-  function buildClassifyMLUrl(weather, mlPrediction) {
-    const ep = mlPrediction.eventProbabilities || {}
+  // ─── Build URL for /classifyWithRuleEngine endpoint ──────────────────────────
+  // Sends raw weather params + all rule engine scores to Haskell
+  // Haskell validates rule engine output against IMD physical ranges
+  function buildClassifyRuleEngineUrl(weather, rePrediction) {
+    const ep = rePrediction.eventProbabilities || {}
     const params = new URLSearchParams({
       // Raw weather
       temp:     weather.temp,
@@ -292,19 +292,19 @@ export default function WeatherDashboard() {
       wind:     weather.wind,
       humidity: weather.humidity,
       pressure: weather.pressure,
-      // ML probabilities per event type
-      ml_thunderstorm:   ep['Thunderstorm']   ?? 0,
-      ml_cyclone:        ep['Cyclone']        ?? 0,
-      ml_tropical_storm: ep['Tropical Storm'] ?? 0,
-      ml_hailstorm:      ep['Hailstorm']      ?? 0,
-      ml_flood_risk:     ep['Flood Risk']     ?? 0,
-      ml_heatwave:       ep['Heatwave']       ?? 0,
-      ml_heavy_rainfall: ep['Heavy Rainfall'] ?? 0,
-      ml_extreme_wind:   ep['Extreme Wind']   ?? 0,
-      ml_cold_wave:      ep['Cold Wave']      ?? 0,
-      ml_overall:        mlPrediction.overallProbability ?? 0,
+      // Rule engine scores per event type
+      re_thunderstorm:   ep['Thunderstorm']   ?? 0,
+      re_cyclone:        ep['Cyclone']        ?? 0,
+      re_tropical_storm: ep['Tropical Storm'] ?? 0,
+      re_hailstorm:      ep['Hailstorm']      ?? 0,
+      re_flood_risk:     ep['Flood Risk']     ?? 0,
+      re_heatwave:       ep['Heatwave']       ?? 0,
+      re_heavy_rainfall: ep['Heavy Rainfall'] ?? 0,
+      re_extreme_wind:   ep['Extreme Wind']   ?? 0,
+      re_cold_wave:      ep['Cold Wave']      ?? 0,
+      re_overall:        rePrediction.overallProbability ?? 0,
     })
-    return `${BACKEND_URL}/classifyML?${params.toString()}`
+    return `${BACKEND_URL}/classifyWithRuleEngine?${params.toString()}`
   }
 
   // ─── Main fetch ─────────────────────────────────────────────────────────────
@@ -350,8 +350,8 @@ export default function WeatherDashboard() {
         temp: wd.hourly.temperature_2m[i] ?? 0, humidity: wd.hourly.relative_humidity_2m[i] ?? 50,
       })).filter(h => new Date(h.time) >= now).slice(0, 168) // 7 days
 
-      // Rain for display and ML: use accumulated rainfall over the next 24 hours
-      // (as ML thresholds are based on daily accumulation, not instantaneous hourly rates)
+      // Rain for display and rule engine: use accumulated rainfall over the next 24 hours
+      // (as rule engine thresholds are based on daily accumulation, not instantaneous hourly rates)
       const rain = parseFloat((future.slice(0, 24).reduce((s, h) => s + h.rain, 0)).toFixed(1))
 
       setForecastHrs(future)
@@ -375,29 +375,29 @@ export default function WeatherDashboard() {
       const weatherData = { temp, wind, windDir, humidity, pressure, rain, avgTemp, avgWind, avgHumidity, avgPressure, avgRain }
       setWeather(weatherData)
 
-      // ── Run Hybrid ML Engine ──
-      const mlPrediction = hybridPredict(weatherData, future)
-      setPrediction(mlPrediction)
+      // ── Run Hybrid Rule Engine ──
+      const rePrediction = hybridPredict(weatherData, future)
+      setPrediction(rePrediction)
 
-      // Classify 7-day forecast using hybrid ML
+      // Classify 7-day forecast using hybrid rule engine
       const dailyResults = classifyForecastDays(future)
       setDailyForecast(dailyResults)
 
       // Set primary results
-      setSeverity(mlPrediction.severity)
-      setDisasterType(mlPrediction.primaryEvent)
+      setSeverity(rePrediction.severity)
+      setDisasterType(rePrediction.primaryEvent)
 
-      // Call /classifyML — sends ML probabilities TO Haskell for validation
-      // Haskell checks ML output against IMD physical ranges and returns
+      // Call /classifyWithRuleEngine — sends rule engine scores TO Haskell for validation
+      // Haskell checks rule engine output against IMD physical ranges and returns
       // a validated final classification. Falls back to old endpoint if unavailable.
       try {
-        const mlUrl = buildClassifyMLUrl(weatherData, mlPrediction)
-        const cr = await fetch(mlUrl)
+        const reUrl = buildClassifyRuleEngineUrl(weatherData, rePrediction)
+        const cr = await fetch(reUrl)
         if (cr.ok) {
           const cd = await cr.json()
           setReason(cd.reason || '')
           // Haskell is now the final authority on severity
-          // It has already validated against both IMD ranges AND ML probabilities
+          // It has already validated against both IMD ranges AND rule engine scores
           if (cd.severity) {
             setSeverity(cd.severity)
           }
@@ -406,19 +406,19 @@ export default function WeatherDashboard() {
             setDisasterType(cd.disasterType)
           }
         } else {
-          // /classifyML failed — fall back to old classifyWithHistory
+          // /classifyWithRuleEngine failed — fall back to old classifyWithHistory
           const fallbackUrl = `${BACKEND_URL}/classifyWithHistory?temp=${temp}&rain=${rain}&wind=${wind}&humidity=${humidity}&pressure=${pressure}&avg_temp=${avgTemp}&avg_rain=${avgRain}&avg_wind=${avgWind}&avg_humidity=${avgHumidity}&avg_pressure=${avgPressure}`
           const fb = await fetch(fallbackUrl)
           if (fb.ok) {
             const fd = await fb.json()
             setReason(fd.reason || '')
-            if (fd.probability && fd.probability > mlPrediction.overallProbability) {
-              setSeverity(fd.severity || mlPrediction.severity)
+            if (fd.probability && fd.probability > rePrediction.overallProbability) {
+              setSeverity(fd.severity || rePrediction.severity)
             }
           }
         }
       } catch (_) {
-        setReason('Backend classification unavailable — using client-side ML engine.')
+        setReason('Backend classification unavailable — using client-side rule engine.')
       }
 
       // Seasonal context (async, non-blocking)
@@ -427,7 +427,7 @@ export default function WeatherDashboard() {
       fetchSeasonalNormals(lat, lon, currentMonth, lat)
         .then(normals => {
           setSeasonalNormals(normals)
-          const result = seasonalSeverity(weatherData, normals, mlPrediction.severity, mlPrediction.primaryEvent)
+          const result = seasonalSeverity(weatherData, normals, rePrediction.severity, rePrediction.primaryEvent)
           setSeasonalResult(result)
           if (result.overridden) setSeverity(result.severity)
           // Re-run forecast with seasonal normals
@@ -450,7 +450,7 @@ export default function WeatherDashboard() {
       <section className="hero">
         <div className="hero-eyebrow">
           <span className="eyebrow-dot"></span>
-          Hybrid ML Engine · 5 Models · 9 Event Types · Real-Time Analysis
+          Hybrid Rule Engine · 5 Techniques · 9 Event Types · Real-Time Analysis
         </div>
         <h1 className="hero-title">
           Storm & Climate<br />
@@ -458,8 +458,8 @@ export default function WeatherDashboard() {
           System
         </h1>
         <p className="hero-sub">
-          Powered by a hybrid ML engine combining Logistic Regression, Random Forest,
-          Gradient Boosting, Time-Series Analysis, and Historical Baseline detection.
+          Powered by a hybrid rule engine combining Sigmoid Scoring, Decision Tree Voting,
+          Weighted Scoring, Time-Series Rules, and Historical Baseline detection.
         </p>
         <div className="hero-search">
           <div className="search-wrap">
@@ -471,7 +471,7 @@ export default function WeatherDashboard() {
           </div>
         </div>
         <div className="hero-stats">
-          {[{ n: '5', l: 'ML Models' }, { n: '9', l: 'Event Types' }, { n: '7-Day', l: 'Forecast' }, { n: '30', l: 'Cities Monitored' }].map((s, i) => (
+          {[{ n: '5', l: 'Deterministic scoring techniques' }, { n: '9', l: 'Event Types' }, { n: '7-Day', l: 'Forecast' }, { n: '30', l: 'Cities Monitored' }].map((s, i) => (
             <div key={s.n} style={{ display: 'flex', alignItems: 'center', gap: '2rem' }}>
               {i > 0 && <div className="hstat-div"></div>}
               <div className="hstat"><div className="hstat-n">{s.n}</div><div className="hstat-l">{s.l}</div></div>
@@ -484,7 +484,7 @@ export default function WeatherDashboard() {
       {/* ════ MAIN ═══════════════════════════════════════════════════════════ */}
       <div className="main">
         {error && <div className="err-banner"><span>⚠️</span><span>{error}</span></div>}
-        {loading && <div className="loading-center"><div className="spinner-lg"></div><span className="loading-lbl">Fetching data & running Hybrid ML classification...</span></div>}
+        {loading && <div className="loading-center"><div className="spinner-lg"></div><span className="loading-lbl">Fetching data & running hybrid rule-based classification...</span></div>}
 
         {hasResults && (
           <>
@@ -533,7 +533,7 @@ export default function WeatherDashboard() {
             {/* Safety Advisories */}
             <div className="card" id="safety-advisories">
               <div className="card-title">📋 Safety Advisories</div>
-              <div className="card-sub">Automated recommendations based on current conditions and ML prediction</div>
+              <div className="card-sub">Automated recommendations based on current conditions and rule engine evaluation</div>
               <ul className="advisory-list">
                 {dynAdvisories(weather, severity, disasterType).map((adv, i) => (
                   <li key={i} className="advisory-item">
@@ -551,7 +551,7 @@ export default function WeatherDashboard() {
           <div className="section-hdr-row">
             <div>
               <h2 className="section-heading"><span className="pdot pdot-cyan"></span>🌍 Global Alerts</h2>
-              <p className="section-sub">Auto-scanning {CITIES.length} cities via Hybrid ML Engine{lastScan && <> · Updated {lastScan.toLocaleTimeString()}</>}</p>
+              <p className="section-sub">Auto-scanning {CITIES.length} cities via Hybrid Rule Engine{lastScan && <> · Updated {lastScan.toLocaleTimeString()}</>}</p>
             </div>
             {scanLoading && <div className="spinner-sm"></div>}
           </div>

@@ -55,12 +55,12 @@ toCondition w = WeatherCondition
   }
 
 -- ─────────────────────────────────────────────────────────────────────────────
--- 2. ML CONFIDENCE CATEGORISATION
---    Converts a raw ML probability (0-100) into a confidence level
+-- 2. SIGNAL CONFIDENCE CATEGORISATION
+--    Converts a raw rule-engine score (0-100) into a confidence level
 -- ─────────────────────────────────────────────────────────────────────────────
 
-toMLConfidence :: Double -> MLConfidence
-toMLConfidence p
+toSignalConfidence :: Double -> SignalConfidence
+toSignalConfidence p
   | p >= 75 = HighSignal
   | p >= 50 = StrongSignal
   | p >= 30 = ModerateSignal
@@ -198,58 +198,58 @@ consistencyCheck w color dtype
              && pressure w > 1005 && humidity w < 85
 
 -- ─────────────────────────────────────────────────────────────────────────────
--- 8. ML-AWARE CONSISTENCY GATE
---    NEW: Uses ML probabilities to validate and refine the IMD classification
---    Logic: ML provides signal strength, IMD provides physical range checks
+-- 8. RULE-ENGINE-AWARE CONSISTENCY GATE
+--    Uses rule engine scores to validate and refine the IMD classification
+--    Logic: Rule engine provides signal strength, IMD provides physical checks
 --    Neither overrules the other — both must agree for a high alert
 -- ─────────────────────────────────────────────────────────────────────────────
 
-mlConsistencyCheck :: Weather -> IMDColor -> DisasterType -> MLProbabilities -> IMDColor
-mlConsistencyCheck w imdColor dtype ml =
+ruleEngineConsistencyCheck :: Weather -> IMDColor -> DisasterType -> RuleEngineProbabilities -> IMDColor
+ruleEngineConsistencyCheck w imdColor dtype re =
   let
     -- First apply the standard IMD consistency check
     baseColor = consistencyCheck w imdColor dtype
 
-    -- Get ML confidence for the relevant event
+    -- Get signal confidence for the relevant event
     eventConf = case dtype of
-      CycloneWatch      -> toMLConfidence (mlCyclone       ml)
-      TropicalStorm     -> toMLConfidence (mlTropicalStorm  ml)
-      FloodRisk         -> toMLConfidence (mlFloodRisk      ml)
-      HeatWaveEvent     -> toMLConfidence (mlHeatwave       ml)
-      HeatStress        -> toMLConfidence (mlHeatwave       ml)
-      ColdWaveEvent     -> toMLConfidence (mlColdWave       ml)
-      ColdStress        -> toMLConfidence (mlColdWave       ml)
-      ThunderstormRisk  -> toMLConfidence (mlThunderstorm   ml)
-      HailstormRisk     -> toMLConfidence (mlHailstorm      ml)
-      HeavyRainfallEvent-> toMLConfidence (mlHeavyRainfall  ml)
-      ExtremeWindEvent  -> toMLConfidence (mlExtremeWind    ml)
-      _                 -> toMLConfidence (mlOverall        ml)
+      CycloneWatch      -> toSignalConfidence (reCyclone       re)
+      TropicalStorm     -> toSignalConfidence (reTropicalStorm  re)
+      FloodRisk         -> toSignalConfidence (reFloodRisk      re)
+      HeatWaveEvent     -> toSignalConfidence (reHeatwave       re)
+      HeatStress        -> toSignalConfidence (reHeatwave       re)
+      ColdWaveEvent     -> toSignalConfidence (reColdWave       re)
+      ColdStress        -> toSignalConfidence (reColdWave       re)
+      ThunderstormRisk  -> toSignalConfidence (reThunderstorm   re)
+      HailstormRisk     -> toSignalConfidence (reHailstorm      re)
+      HeavyRainfallEvent-> toSignalConfidence (reHeavyRainfall  re)
+      ExtremeWindEvent  -> toSignalConfidence (reExtremeWind    re)
+      _                 -> toSignalConfidence (reOverall        re)
 
-    overallConf = toMLConfidence (mlOverall ml)
+    overallConf = toSignalConfidence (reOverall re)
 
   in case (baseColor, eventConf) of
-    -- UPGRADE: IMD says Yellow but ML is strongly confident → promote to Orange
-    -- Rationale: ML detected compound signals IMD point-scoring may have missed
+    -- UPGRADE: IMD says Yellow but rule engine is strongly confident → promote to Orange
+    -- Rationale: Rule engine detected compound signals IMD point-scoring may have missed
     (Yellow, StrongSignal) -> Orange
     (Yellow, HighSignal)   -> Orange
 
-    -- UPGRADE: IMD says Green but ML is highly confident → promote to Yellow
-    -- Rationale: ML sees early signal before IMD thresholds are crossed
+    -- UPGRADE: IMD says Green but rule engine is highly confident → promote to Yellow
+    -- Rationale: Rule engine sees early signal before IMD thresholds are crossed
     (Green, StrongSignal)  -> Yellow
     (Green, HighSignal)    -> Orange
 
-    -- DOWNGRADE: IMD says Orange but ML has no/weak signal → demote to Yellow
-    -- Rationale: IMD threshold crossed but ML sees no compound risk pattern
+    -- DOWNGRADE: IMD says Orange but rule engine has no/weak signal → demote to Yellow
+    -- Rationale: IMD threshold crossed but rule engine sees no compound risk pattern
     (Orange, NoSignal)     -> Yellow
     (Orange, WeakSignal)   -> Yellow
 
-    -- DOWNGRADE: IMD says Red but ML confidence is below Strong → demote to Orange
-    -- Rationale: extreme IMD category requires ML confirmation
+    -- DOWNGRADE: IMD says Red but rule engine confidence is below Strong → demote to Orange
+    -- Rationale: extreme IMD category requires rule engine confirmation
     (Red, NoSignal)        -> Orange
     (Red, WeakSignal)      -> Orange
     (Red, ModerateSignal)  -> Orange
 
-    -- SPECIAL: If overall ML risk is High/Extreme regardless of event type
+    -- SPECIAL: If overall risk is High/Extreme regardless of event type
     -- and IMD is only Green, at least show Yellow
     _ | baseColor == Green && overallConf `elem` [StrongSignal, HighSignal] -> Yellow
 
@@ -380,14 +380,14 @@ classifyWithHistory w avg =
   in (imdColorToString checkedColor, reason, disasterTypeToString dtype, prob)
 
 -- ─────────────────────────────────────────────────────────────────────────────
--- 12. NEW: classifyWithML
---     Receives raw weather + ML engine probabilities
---     Uses ML probabilities to validate and refine IMD classification
+-- 12. classifyWithRuleEngine
+--     Receives raw weather + rule engine scores from the frontend
+--     Uses rule engine scores to validate and refine IMD classification
 --     Returns same shape as existing classify functions for easy integration
 -- ─────────────────────────────────────────────────────────────────────────────
 
-classifyWithML :: Weather -> MLProbabilities -> (String, String, String, Double)
-classifyWithML w ml =
+classifyWithRuleEngine :: Weather -> RuleEngineProbabilities -> (String, String, String, Double)
+classifyWithRuleEngine w re =
   let
     -- Step 1: Categorise raw weather params (existing Haskell logic)
     cond = toCondition w
@@ -398,23 +398,23 @@ classifyWithML w ml =
     -- Step 3: Get raw IMD color from thresholds (existing logic)
     rawColor = classifyCondition cond
 
-    -- Step 4: Apply ML-aware consistency check (NEW)
-    --         This is where ML probabilities validate the IMD result
-    finalColor = mlConsistencyCheck w rawColor dtype ml
+    -- Step 4: Apply rule-engine-aware consistency check
+    --         This is where rule engine scores validate the IMD result
+    finalColor = ruleEngineConsistencyCheck w rawColor dtype re
 
     -- Step 5: Compute final probability
-    --         Blend Haskell sigmoid with ML overall probability
+    --         Blend Haskell sigmoid with rule engine overall score
     --         Haskell sigmoid: physical range based
-    --         ML overall:      pattern-based ensemble
+    --         Rule engine overall: pattern-based ensemble
     haskellProb = stormProbability w
-    blendedProb = (haskellProb * 0.4) + (mlOverall ml * 0.6)
+    blendedProb = (haskellProb * 0.4) + (reOverall re * 0.6)
     finalProb   = fromIntegral (round (blendedProb * 10) :: Int) / 10.0
 
     -- Step 6: Build reason string explaining what happened
-    eventConf   = toMLConfidence (mlOverall ml)
+    eventConf   = toSignalConfidence (reOverall re)
     note        = hiNote (temperature w) (humidity w)
 
-    reason = buildMLReason w cond dtype rawColor finalColor eventConf note
+    reason = buildRuleEngineReason w cond dtype rawColor finalColor eventConf note
 
   in ( imdColorToString finalColor
      , reason
@@ -422,30 +422,30 @@ classifyWithML w ml =
      , finalProb
      )
 
--- | Build a human-readable reason string for the ML classification
-buildMLReason :: Weather -> WeatherCondition -> DisasterType
-              -> IMDColor -> IMDColor -> MLConfidence -> String -> String
-buildMLReason w wc dtype imdColor finalColor mlConf note =
+-- | Build a human-readable reason string for the rule-engine classification
+buildRuleEngineReason :: Weather -> WeatherCondition -> DisasterType
+              -> IMDColor -> IMDColor -> SignalConfidence -> String -> String
+buildRuleEngineReason w wc dtype imdColor finalColor reConf note =
   let
     imdStr   = imdColorToString imdColor
     finalStr = imdColorToString finalColor
-    confStr  = case mlConf of
-      HighSignal     -> "high ML confidence"
-      StrongSignal   -> "strong ML signal"
-      ModerateSignal -> "moderate ML signal"
-      WeakSignal     -> "weak ML signal"
-      NoSignal       -> "no ML signal"
+    confStr  = case reConf of
+      HighSignal     -> "high rule-engine confidence"
+      StrongSignal   -> "strong rule-engine signal"
+      ModerateSignal -> "moderate rule-engine signal"
+      WeakSignal     -> "weak rule-engine signal"
+      NoSignal       -> "no rule-engine signal"
 
     -- Was the result upgraded, downgraded or unchanged?
     adjustment
       | finalColor > imdColor =
-          "ML engine upgraded from " ++ imdStr ++ " to " ++ finalStr
+          "Rule engine upgraded from " ++ imdStr ++ " to " ++ finalStr
           ++ " based on " ++ confStr ++ "."
       | finalColor < imdColor =
-          "ML engine downgraded from " ++ imdStr ++ " to " ++ finalStr
+          "Rule engine downgraded from " ++ imdStr ++ " to " ++ finalStr
           ++ " — " ++ confStr ++ " did not confirm IMD threshold breach."
       | otherwise =
-          "IMD classification confirmed by ML engine (" ++ confStr ++ ")."
+          "IMD classification confirmed by rule engine (" ++ confStr ++ ")."
 
     -- Add physical context
     physContext = case dtype of

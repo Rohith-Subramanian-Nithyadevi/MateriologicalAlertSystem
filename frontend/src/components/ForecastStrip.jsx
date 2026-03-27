@@ -1,4 +1,4 @@
-import { SEVERITY_COLORS } from '../lib/HybridMLEngine'
+import { SEVERITY_COLORS } from '../lib/HybridRuleEngine'
 
 const SEV = {
   Low:      { emoji: '✅', color: '#4ade80' },
@@ -33,7 +33,7 @@ export default function ForecastStrip({ dailyForecast }) {
         🗓️ 7-Day Risk Forecast
       </h2>
       <p className="card-sub" style={{ marginBottom: '1rem', marginTop: '-0.5rem' }}>
-        Each day analyzed independently using the Hybrid ML Engine · Probabilities based on forecast data
+        Each day analyzed independently using the Hybrid Rule Engine · Probabilities based on forecast data
       </p>
       <div className="forecast-strip">
         {dailyForecast.map((d, i) => {

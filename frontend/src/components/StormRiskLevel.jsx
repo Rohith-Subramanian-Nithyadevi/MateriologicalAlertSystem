@@ -1,4 +1,4 @@
-import { SEVERITY_COLORS, EVENT_TYPES, probToLevel } from '../lib/HybridMLEngine'
+import { SEVERITY_COLORS, EVENT_TYPES, probToLevel } from '../lib/HybridRuleEngine'
 
 const SEV = {
   Low:      { emoji: '✅', cls: 'low',      color: '#4ade80' },
@@ -166,11 +166,11 @@ export default function StormRiskLevel({ severity, disasterType, prediction, wea
         </div>
       </div>
 
-      {/* ML model contributions — FIXED display */}
+      {/* Rule engine contributions — FIXED display */}
       {modelRows.length > 0 && (
         <div style={{ marginTop: '0.75rem', padding: '0.7rem 0.85rem', background: 'rgba(34,211,238,0.04)', border: '1px solid rgba(34,211,238,0.1)', borderRadius: 'var(--r-sm)' }}>
           <div style={{ fontSize: '0.7rem', fontWeight: 600, color: 'var(--cyan)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '0.6rem' }}>
-            Hybrid ML Model Contributions
+            Hybrid Rule Engine Contributions
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.55rem' }}>
             {modelRows.map(m => (

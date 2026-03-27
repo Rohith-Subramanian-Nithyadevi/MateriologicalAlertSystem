@@ -1,4 +1,4 @@
-import { EVENT_TYPES, SEVERITY_COLORS, probToLevel } from '../lib/HybridMLEngine'
+import { EVENT_TYPES, SEVERITY_COLORS, probToLevel } from '../lib/HybridRuleEngine'
 
 const EVENT_META = {
   'Thunderstorm':    { emoji: '⛈️', color: '#a78bfa', desc: 'Severe convective storm with lightning, wind, and rain' },
@@ -34,7 +34,7 @@ export default function CalamityClassification({ prediction, dailyForecast }) {
     <div className="card" id="calamity-classification">
       <div className="card-title">🔬 Detailed Calamity Classification</div>
       <div className="card-sub">
-        9 event types analyzed using Hybrid ML Engine — Logistic Regression + Random Forest + Gradient Boosting
+        9 event types analyzed using Hybrid Rule Engine — Sigmoid Scoring + Decision Tree Voting + Weighted Scoring
       </div>
 
       <div className="calamity-grid">

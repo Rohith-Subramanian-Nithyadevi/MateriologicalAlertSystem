@@ -18,7 +18,7 @@ main = do
     get "/health" $ do
       json $ object [ "status" .= ("ok" :: String) ]
 
-    -- ── EXISTING: classify (unchanged) ──────────────────────────────────────
+    -- ── classify (basic IMD threshold classification) ─────────────────────
     get "/classify" $ do
       temp <- queryParam "temp"
       rain <- queryParam "rain"
@@ -43,7 +43,7 @@ main = do
         , "probability"  .= prob
         ]
 
-    -- ── EXISTING: classifyWithHistory (unchanged) ────────────────────────────
+    -- ── classifyWithHistory (IMD + 30-day historical context) ─────────────
     get "/classifyWithHistory" $ do
       temp    <- queryParam "temp"
       rain    <- queryParam "rain"
@@ -80,11 +80,11 @@ main = do
         , "probability"  .= prob
         ]
 
-    -- ── NEW: classifyML ──────────────────────────────────────────────────────
-    -- Receives raw weather params + ML engine probabilities from JS frontend
-    -- Uses ML probabilities to validate and refine Haskell IMD classification
+    -- ── classifyWithRuleEngine ────────────────────────────────────────────
+    -- Receives raw weather params + rule engine scores from JS frontend
+    -- Uses rule engine scores to validate and refine Haskell IMD classification
     -- Both must agree for a high alert — neither blindly overrules the other
-    get "/classifyML" $ do
+    get "/classifyWithRuleEngine" $ do
       -- Raw weather params (same as other endpoints)
       temp <- queryParam "temp"
       rain <- queryParam "rain"
@@ -92,17 +92,17 @@ main = do
       hum  <- queryParam "humidity"
       pres <- queryParam "pressure"
 
-      -- ML engine probabilities per event type (0-100 each)
-      mlThunder   <- queryParam "ml_thunderstorm"
-      mlCyc       <- queryParam "ml_cyclone"
-      mlTropical  <- queryParam "ml_tropical_storm"
-      mlHail      <- queryParam "ml_hailstorm"
-      mlFlood     <- queryParam "ml_flood_risk"
-      mlHeat      <- queryParam "ml_heatwave"
-      mlHeavyRain <- queryParam "ml_heavy_rainfall"
-      mlWind      <- queryParam "ml_extreme_wind"
-      mlCold      <- queryParam "ml_cold_wave"
-      mlAll       <- queryParam "ml_overall"
+      -- Rule engine scores per event type (0-100 each)
+      reThunder   <- queryParam "re_thunderstorm"
+      reCyc       <- queryParam "re_cyclone"
+      reTropical  <- queryParam "re_tropical_storm"
+      reHail      <- queryParam "re_hailstorm"
+      reFlood     <- queryParam "re_flood_risk"
+      reHeat      <- queryParam "re_heatwave"
+      reHeavyRain <- queryParam "re_heavy_rainfall"
+      reWind      <- queryParam "re_extreme_wind"
+      reCold      <- queryParam "re_cold_wave"
+      reAll       <- queryParam "re_overall"
 
       let weather = Weather
             { temperature = temp
@@ -112,20 +112,20 @@ main = do
             , pressure    = pres
             }
 
-      let mlProbs = MLProbabilities
-            { mlThunderstorm  = mlThunder
-            , mlCyclone       = mlCyc
-            , mlTropicalStorm = mlTropical
-            , mlHailstorm     = mlHail
-            , mlFloodRisk     = mlFlood
-            , mlHeatwave      = mlHeat
-            , mlHeavyRainfall = mlHeavyRain
-            , mlExtremeWind   = mlWind
-            , mlColdWave      = mlCold
-            , mlOverall       = mlAll
+      let reProbs = RuleEngineProbabilities
+            { reThunderstorm  = reThunder
+            , reCyclone       = reCyc
+            , reTropicalStorm = reTropical
+            , reHailstorm     = reHail
+            , reFloodRisk     = reFlood
+            , reHeatwave      = reHeat
+            , reHeavyRainfall = reHeavyRain
+            , reExtremeWind   = reWind
+            , reColdWave      = reCold
+            , reOverall       = reAll
             }
 
-      let (sev, reason, disasterType, prob) = classifyWithML weather mlProbs
+      let (sev, reason, disasterType, prob) = classifyWithRuleEngine weather reProbs
 
       json $ object
         [ "severity"     .= sev

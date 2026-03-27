@@ -1,4 +1,4 @@
-import { SEVERITY_COLORS, probToLevel } from '../lib/HybridMLEngine'
+import { SEVERITY_COLORS, probToLevel } from '../lib/HybridRuleEngine'
 
 const compass = deg => {
   const d = ['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW']

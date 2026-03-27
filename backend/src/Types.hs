@@ -18,26 +18,26 @@ data WeatherAverage = WeatherAverage
   , avgPressure    :: Double
   } deriving (Show, Eq)
 
--- | ML engine probabilities for each event type (0-100)
--- These come from the JS Hybrid ML Engine and represent
--- the combined LR + RF + GB ensemble probabilities
-data MLProbabilities = MLProbabilities
-  { mlThunderstorm   :: Double
-  , mlCyclone        :: Double
-  , mlTropicalStorm  :: Double
-  , mlHailstorm      :: Double
-  , mlFloodRisk      :: Double
-  , mlHeatwave       :: Double
-  , mlHeavyRainfall  :: Double
-  , mlExtremeWind    :: Double
-  , mlColdWave       :: Double
-  , mlOverall        :: Double   -- highest probability across all events
+-- | Rule engine scores for each event type (0-100)
+-- These come from the JS Hybrid Rule Engine and represent
+-- the combined deterministic scoring across all rule-based evaluators
+data RuleEngineProbabilities = RuleEngineProbabilities
+  { reThunderstorm   :: Double
+  , reCyclone        :: Double
+  , reTropicalStorm  :: Double
+  , reHailstorm      :: Double
+  , reFloodRisk      :: Double
+  , reHeatwave       :: Double
+  , reHeavyRainfall  :: Double
+  , reExtremeWind    :: Double
+  , reColdWave       :: Double
+  , reOverall        :: Double   -- highest score across all events
   } deriving (Show, Eq)
 
--- | Combined input for /classifyML endpoint
-data MLClassifyRequest = MLClassifyRequest
-  { mlWeather       :: Weather
-  , mlProbabilities :: MLProbabilities
+-- | Combined input for /classifyWithRuleEngine endpoint
+data RuleEngineClassifyRequest = RuleEngineClassifyRequest
+  { reWeather       :: Weather
+  , reProbabilities :: RuleEngineProbabilities
   } deriving (Show, Eq)
 
 -- | IMD Alert Colors (Severity)
@@ -92,8 +92,8 @@ data PressureCategory
   | ExtremeLowPressure   -- < 970 hPa
   deriving (Show, Eq, Ord)
 
--- | ML probability thresholds for event confirmation
-data MLConfidence
+-- | Signal confidence thresholds for event confirmation
+data SignalConfidence
   = NoSignal       -- < 15%
   | WeakSignal     -- 15-30%
   | ModerateSignal -- 30-50%

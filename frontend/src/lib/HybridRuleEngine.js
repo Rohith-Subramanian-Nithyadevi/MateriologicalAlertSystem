@@ -1,14 +1,18 @@
 /**
- * HybridMLEngine.js
- * 
- * A hybrid ML-inspired prediction engine combining 5 techniques:
- *   1. Logistic Regression  — 9 per-disaster models (one sigmoid per event type)
- *   2. Random Forest         — event type voting (7 independent decision trees)
- *   3. Gradient Boosting     — risk probability refinement (sequential residuals)
- *   4. Time-Series (ARIMA)   — trend detection (pressure/wind acceleration)
+ * HybridRuleEngine.js
+ *
+ * A hybrid rule-based prediction engine combining 5 deterministic techniques
+ * inspired by statistical and ML concepts (but using NO actual machine learning,
+ * NO training, NO datasets, and NO ML libraries):
+ *
+ *   1. Sigmoid Scoring       — 9 per-disaster rule sets (one sigmoid per event type)
+ *   2. Decision Tree Voting  — event type voting (7 independent hardcoded decision trees)
+ *   3. Weighted Scoring      — risk probability refinement (sequential score corrections)
+ *   4. Time-Series Rules     — trend detection (pressure/wind acceleration thresholds)
  *   5. Historical Baseline   — anomaly detection (z-score vs seasonal normals)
  *
  * All functions are pure — no side effects, no API calls.
+ * All thresholds are manually tuned based on IMD/WMO meteorological standards.
  */
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -32,10 +36,10 @@ const SEVERITY_ORDER = ['Low', 'Moderate', 'High', 'Extreme']
 const SEVERITY_COLORS = { Low: '#4ade80', Moderate: '#fbbf24', High: '#fb923c', Extreme: '#f87171' }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 1. LOGISTIC REGRESSION — One model per disaster type
+// 1. SIGMOID SCORING — One rule set per disaster type
 //
-//    Each model has its own weights tuned to the signals that matter for THAT
-//    specific hazard. sigmoid(z) -> probability 0-100%.
+//    Each rule set has its own manually-tuned weights for the signals that
+//    matter for THAT specific hazard. sigmoid(z) -> score 0-100%.
 //    Math.max(0, x - threshold) = "how far above threshold am I?" (relu-like)
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -136,7 +140,7 @@ function lr_coldWave(w) {
 }
 
 /**
- * Run ALL 9 LR models — returns per-disaster probability + overall max.
+ * Run ALL 9 sigmoid scoring rule sets — returns per-disaster score + overall max.
  */
 export function logisticRegressionAll(w) {
   const perEvent = {
@@ -154,13 +158,13 @@ export function logisticRegressionAll(w) {
   return { perEvent, overall }
 }
 
-// Backward-compatible export — returns highest LR probability across all models
+// Backward-compatible export — returns highest sigmoid score across all rule sets
 export function logisticStormProb(w) {
   return logisticRegressionAll(w).overall
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 2. RANDOM FOREST — Event type voting
+// 2. DECISION TREE VOTING — Event type voting via hardcoded decision trees
 // ─────────────────────────────────────────────────────────────────────────────
 
 function tree1_pressureWind(w) {
@@ -256,7 +260,7 @@ export function randomForestVote(w) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 3. GRADIENT BOOSTING — Risk probability per event type
+// 3. WEIGHTED SCORING — Risk score per event type with boost corrections
 // ─────────────────────────────────────────────────────────────────────────────
 
 function baseScore(w, eventType) {
@@ -323,7 +327,7 @@ export function gradientBoostProbabilities(w) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 4. TIME-SERIES — Trend detection from hourly forecast
+// 4. TIME-SERIES RULES — Trend detection from hourly forecast
 // ─────────────────────────────────────────────────────────────────────────────
 
 export function timeSeriesAnalysis(hours) {
@@ -480,28 +484,28 @@ export function historicalAnomalyAnalysis(current, normals) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 6. ENSEMBLE COMBINER
+// 6. COMPOSITE SCORE COMBINER
 // ─────────────────────────────────────────────────────────────────────────────
 
 export function hybridPredict(weather, forecastHours = [], seasonalNormals = null) {
-  // 1. Logistic Regression — now per-disaster (9 models)
+  // 1. Sigmoid Scoring — per-disaster (9 rule sets)
   const lrResult = logisticRegressionAll(weather)
   const stormProb = lrResult.overall   // keep for backward compat / overall risk
 
-  // 2. Random Forest
+  // 2. Decision Tree Voting
   const rfResult = randomForestVote(weather)
 
-  // 3. Gradient Boosting — computed BEFORE determining primaryEvent
+  // 3. Weighted Scoring — computed BEFORE determining primaryEvent
   const gbProbs = gradientBoostProbabilities(weather)
 
-  // 4. Time-Series
+  // 4. Time-Series Rules
   const trends = timeSeriesAnalysis(forecastHours)
 
   // 5. Historical Baseline
   const historical = historicalAnomalyAnalysis(weather, seasonalNormals)
 
-  // ── Ensemble: combine all 5 models per event type ──
-  // Weights: GB 35%, LR per-event 25%, RF 20%, TS modifier, Historical adj
+  // ── Composite: combine all 5 scoring techniques per event type ──
+  // Weights: Weighted 35%, Sigmoid per-event 25%, Tree Vote 20%, TS modifier, Historical adj
   const eventProbs = {}
   EVENT_TYPES.forEach(type => {
     const gb  = gbProbs[type] || 0
@@ -546,14 +550,14 @@ export function hybridPredict(weather, forecastHours = [], seasonalNormals = nul
     }))
     .sort((a, b) => b.probability - a.probability)
 
-  // ── FIX: Compute model contributions with fallbacks so nothing shows as 0 ──
+  // ── Compute scoring technique contributions with fallbacks so nothing shows as 0 ──
 
-  // Random Forest: percentage of trees that voted for ANY event (activity level)
+  // Decision Trees: percentage of trees that voted for ANY event (activity level)
   const rfActivityPct = Math.round((rfResult.totalVotes / RF_TREES.length) * 100)
 
-  // Gradient Boosting: highest GB score among all event types (best signal found)
+  // Weighted Scoring: highest score among all event types (best signal found)
   const topGbScore = Math.max(...EVENT_TYPES.map(t => gbProbs[t] || 0))
-  // Also get the GB score for the primary event specifically (or top if no threat)
+  // Also get the weighted score for the primary event specifically (or top if no threat)
   const gbPrimaryScore = primaryEvent !== 'No Threat'
     ? (gbProbs[primaryEvent] ?? topGbScore)
     : topGbScore
