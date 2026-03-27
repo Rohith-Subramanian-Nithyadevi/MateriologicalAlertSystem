@@ -56,25 +56,25 @@ export default function StormRiskLevel({ severity, disasterType, prediction, wea
   // ── Build model contribution rows with correct data ──
   const modelRows = mc ? [
     {
-      label: 'Logistic Reg.',
+      label: 'Weighted Sigmoid Scoring',
       val: `${mc.lrTopScore ?? mc.logisticRegression}%`,
-      note: mc.lrTopEvent ? `→ ${mc.lrTopEvent}` : 'per-disaster sigmoid',
+      note: mc.lrTopEvent ? `→ ${mc.lrTopEvent}` : 'per-disaster weighted sigmoid',
       barPct: Math.min(mc.lrTopScore ?? mc.logisticRegression, 100),
       color: '#22d3ee',
     },
     {
-      label: 'Random Forest',
+      label: 'Ensemble Decision Trees',
       val: (mc.randomForestActivity ?? 0) > 0 ? `${mc.randomForest}%` : '—',
       note: (mc.randomForestActivity ?? 0) > 0
         ? (mc.rfPrimary && mc.rfPrimary !== 'No Threat'
-            ? `→ ${mc.rfPrimary} (${mc.randomForestActivity}% trees)`
-            : `${mc.randomForestActivity}% trees active`)
+            ? `→ ${mc.rfPrimary} (${mc.randomForestActivity}% active branches)`
+            : `${mc.randomForestActivity}% active branches`)
         : 'no threshold crossed — conditions mild',
       barPct: Math.min(mc.randomForestActivity ?? 0, 100),
       color: '#818cf8',
     },
     {
-      label: 'Grad. Boost',
+      label: 'Gradient Thresholds',
       // show highest GB score found (most informative signal)
       val: `${mc.gradientBoostingTop ?? mc.gradientBoosting}%`,
       note: `primary: ${mc.gradientBoosting}%`,
